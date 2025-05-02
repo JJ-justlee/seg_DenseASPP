@@ -14,8 +14,8 @@ import shutil
 
 class CityScapesSeg_dataset(Dataset):
   def __init__(self, root_dir, input_height, input_width):
-    self.image_dict = {}
-    self.mask_dict = {}
+    self.image_filenames = []
+    self.mask_filenames = []
 
     # gt_train_path = os.path.join(root_dir, 'gtFine_trainvaltest', 'gtFine', 'save_train_mapped')
 
@@ -43,7 +43,10 @@ class CityScapesSeg_dataset(Dataset):
         firstGtfolder_path = os.path.join(gt_train_path, firstGtfolder)
         if os.path.isdir(firstGtfolder_path):
           for secondGtfile in os.listdir(firstGtfolder_path):
-            if secondGtfile.endswith('labelIds.png'):                
+            if secondGtfile.endswith('labelIds.png'):
+                secondGtfile_path = os.path.join(firstGtfolder_path, secondGtfile)
+                gtFile_name = os.path.basename(secondGtfile_path)
+                
                 # 파일 불러오기
                 label_path = os.path.join(firstGtfolder_path, secondGtfile)
                 label_img = np.array(Image.open(label_path))
@@ -59,12 +62,15 @@ class CityScapesSeg_dataset(Dataset):
                 # 이미지로 저장 (uint8로 변환)
                 gt_mapped = Image.fromarray(mapped.astype(np.uint8))
 
-                key = secondGtfile.replace('_gtFine_labelIds.png', '')
-                
                 # self.mask_filenames.append((secondGtfile, gt_mapped))
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                   gt_mapped.save(tmp.name)
-                  self.mask_dict[key] = tmp.name
+                  temp_path = tmp.name
+                
+                # gt_name = gtFile_name
+                # gt_name_path = os.path.join(firstGtfolder_path, gt_name)
+                # shutil(temp_path, gt_name_path)
+                # self.mask_filenames.append(gt_name_path)
 
     image_train_dir = os.path.join(root_dir, 'leftImg8bit_trainvaltest', 'leftImg8bit', 'train')
 
@@ -74,14 +80,12 @@ class CityScapesSeg_dataset(Dataset):
             for image_file in os.listdir(rgbImage_path):
               image_file_path = os.path.join(rgbImage_path, image_file)
               if image_file.endswith('leftImg8bit.png'):
-                  key = image_file.replace('_leftImg8bit.png', '')
-                  self.image_dict[key] = image_file_path
-                  
+                  self.image_filenames.append(image_file_path)
 
-    common_keys = sorted(set((self.image_dict.keys())) & set((self.mask_dict.keys())))
-    self.image_filenames = [self.image_dict[k] for k in common_keys]
-    self.mask_filenames = [self.mask_dict[k] for k in common_keys]
-    self.mask_ids = common_keys
+    self.image_filenames = sorted(self.image_filenames)
+    self.mask_filenames = sorted(self.mask_filenames)
+    # self.mask_filenames = sorted(self.mask_filenames) > AttributeError: 'tuple' object has no attribute 'read'
+    self.mask_ids = sorted([os.path.basename(f).split('_leftImg8bit.png')[0] for f in self.image_filenames])
 
     self.input_height = input_height
     self.input_width = input_width
