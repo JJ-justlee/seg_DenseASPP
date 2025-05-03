@@ -14,7 +14,7 @@ from CityScapesSeg_dataloader import CityScapesSeg_dataset
 from utility import colorize
 
 #put a base path below
-base_dir = '/home/addinedu/Documents/GitHub/seg_DenseASPP'
+base_dir = '/home/dev/DATASET'
 parser = argparse.ArgumentParser(description='Simple Semantic Segmentation Train')
 
 parser.add_argument('--mode', type=str, help='train or test', default='test')
@@ -97,11 +97,12 @@ def main():
 
     CityScapes_dataset = CityScapesSeg_dataset(root_dir=args.root_dir,
                                     input_height=args.input_height, input_width=args.input_width)
+
     #root_dir(json_path와 image_dir변수에 들어있는)는 위 coco_dataset변수에 선언된 값, 즉 root_dir에 담긴 args.root_dir로 경로가 선언된다
     dataloader = DataLoader(CityScapes_dataset,
                             batch_size=args.batch_size,
                             shuffle=True,
-                            num_workers=4,
+                            num_workers=0,
                             pin_memory=True)
 
     # 뉴럴네트워크 로드
@@ -122,12 +123,10 @@ def main():
         
         epoch_IoU = []
         
-        for step, batch_image in enumerate(dataloader):
+        for step, (batch_image, _) in enumerate(dataloader):
             sample_image = batch_image['image']
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
-            
-            if step > 1: break
             
             #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
             #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
@@ -158,6 +157,16 @@ def main():
             iou = intersection / union if union > 0 else torch.tensor(0.0)
             epoch_IoU.append(iou.item())  # Store IoU for the batch
 
+        for _, val_batch_image in dataloader:
+            sample_val_image = val_batch_image['val_image']
+            sample_val_gt = val_batch_image['val_gt']
+
+            with torch.no_grad():
+                val_logit = model(sample_val_image)
+                val_prediction = torch.softmax(val_logit, dim=1)
+                predicted_class = torch.argmax(val_prediction, dim=1)
+                
+                
         # Calculate average IoU for the epoch
         avg_IoU = sum(epoch_IoU) / len(epoch_IoU)
         save_IoU.append(avg_IoU)

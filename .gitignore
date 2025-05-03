@@ -2,3 +2,6 @@
 /__pycache__
 /seseg
 /.vscode
+*.png
+*.pyc
+/home/dev/DATASET/experiments
