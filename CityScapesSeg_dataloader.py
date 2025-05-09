@@ -15,26 +15,16 @@ import shutil
 class CityScapesSeg_dataset(Dataset):
   def __init__(self, root_dir, input_height, input_width):
     self.image_filenames = []
-    self.mask_filenames = []
-
-    # gt_train_path = os.path.join(root_dir, 'gtFine_trainvaltest', 'gtFine', 'save_train_mapped')
-
-    # for city_name in os.listdir(gt_train_path):
-    #     city_path = os.path.join(gt_train_path, city_name)
-    #     if os.path.isdir(city_path):
-    #         for labelTrainIds in os.listdir(city_path):
-    #           labelTrainIds_path = os.path.join(city_path, labelTrainIds)
-    #           if labelTrainIds.endswith('labeltrainIds.png'):
-    #             self.mask_filenames.append(labelTrainIds_path)
+    self.gt_filenames = []
 
     # 매핑 정의
-    ignore_label = 255
-    id_to_trainid = {-1: ignore_label, 0: ignore_label, 1: ignore_label, 2: ignore_label,
-                    3: ignore_label, 4: ignore_label, 5: ignore_label, 6: ignore_label,
-                    7: 0, 8: 1, 9: ignore_label, 10: ignore_label, 11: 2, 12: 3, 13: 4,
-                    14: ignore_label, 15: ignore_label, 16: ignore_label, 17: 5,
-                    18: ignore_label, 19: 6, 20: 7, 21: 8, 22: 9, 23: 10, 24: 11, 25: 12,
-                    26: 13, 27: 14, 28: 15, 29: ignore_label, 30: ignore_label,
+    self.ignore_label = 255
+    self.id_to_trainid = {-1: self.ignore_label, 0: self.ignore_label, 1: self.ignore_label, 2: self.ignore_label,
+                    3: self.ignore_label, 4: self.ignore_label, 5: self.ignore_label, 6: self.ignore_label,
+                    7: 0, 8: 1, 9: self.ignore_label, 10: self.ignore_label, 11: 2, 12: 3, 13: 4,
+                    14: self.ignore_label, 15: self.ignore_label, 16: self.ignore_label, 17: 5,
+                    18: self.ignore_label, 19: 6, 20: 7, 21: 8, 22: 9, 23: 10, 24: 11, 25: 12,
+                    26: 13, 27: 14, 28: 15, 29: self.ignore_label, 30: self.ignore_label,
                     31: 16, 32: 17, 33: 18}
 
     gt_train_path = os.path.join(root_dir, 'gtFine_trainvaltest', 'gtFine', 'train')
@@ -42,50 +32,23 @@ class CityScapesSeg_dataset(Dataset):
     for firstGtfolder in os.listdir(gt_train_path):
         firstGtfolder_path = os.path.join(gt_train_path, firstGtfolder)
         if os.path.isdir(firstGtfolder_path):
-          for secondGtfile in os.listdir(firstGtfolder_path):
-            if secondGtfile.endswith('labelIds.png'):
-                secondGtfile_path = os.path.join(firstGtfolder_path, secondGtfile)
-                gtFile_name = os.path.basename(secondGtfile_path)
-                
-                # 파일 불러오기
-                label_path = os.path.join(firstGtfolder_path, secondGtfile)
-                label_img = np.array(Image.open(label_path))
+          for firstGtfile in os.listdir(firstGtfolder_path):
+            firstGtfile_path = os.path.join(firstGtfolder_path, firstGtfile)
+            if firstGtfile.endswith('_gtFine_labelIds.png'):
+                self.gt_filenames.append(firstGtfile_path)
 
-                # 매핑 적용
-                mapped = np.full_like(label_img, ignore_label)
-                for k, v in id_to_trainid.items():
-                    mapped[label_img == k] = v
+    image_train_path = os.path.join(root_dir, 'leftImg8bit_trainvaltest', 'leftImg8bit', 'train')
 
-                # save_name = filename.replace('labelIds.png', f'label{split}Ids.png')
-                # save_path = os.path.join(output_city_path, save_name)
-
-                # 이미지로 저장 (uint8로 변환)
-                gt_mapped = Image.fromarray(mapped.astype(np.uint8))
-
-                # self.mask_filenames.append((secondGtfile, gt_mapped))
-                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                  gt_mapped.save(tmp.name)
-                  temp_path = tmp.name
-                
-                # gt_name = gtFile_name
-                # gt_name_path = os.path.join(firstGtfolder_path, gt_name)
-                # shutil(temp_path, gt_name_path)
-                # self.mask_filenames.append(gt_name_path)
-
-    image_train_dir = os.path.join(root_dir, 'leftImg8bit_trainvaltest', 'leftImg8bit', 'train')
-
-    for image_dir in os.listdir(image_train_dir):
-        rgbImage_path = os.path.join(image_train_dir, image_dir)
-        if os.path.isdir(rgbImage_path):
-            for image_file in os.listdir(rgbImage_path):
-              image_file_path = os.path.join(rgbImage_path, image_file)
-              if image_file.endswith('leftImg8bit.png'):
-                  self.image_filenames.append(image_file_path)
+    for firstImageFolder in os.listdir(image_train_path):
+        firstImageFolder_path = os.path.join(image_train_path, firstImageFolder)
+        if os.path.isdir(firstImageFolder_path):
+            for firstImageFile in os.listdir(firstImageFolder_path):
+              firstImageFile_path = os.path.join(firstImageFolder_path, firstImageFile)
+              if firstImageFile.endswith('_leftImg8bit.png'):
+                  self.image_filenames.append(firstImageFile_path)
 
     self.image_filenames = sorted(self.image_filenames)
-    self.mask_filenames = sorted(self.mask_filenames)
-    # self.mask_filenames = sorted(self.mask_filenames) > AttributeError: 'tuple' object has no attribute 'read'
-    self.mask_ids = sorted([os.path.basename(f).split('_leftImg8bit.png')[0] for f in self.image_filenames])
+    self.mask_filenames = sorted(self.gt_filenames)
 
     self.input_height = input_height
     self.input_width = input_width
@@ -101,20 +64,31 @@ class CityScapesSeg_dataset(Dataset):
       transforms.ColorJitter(brightness=0.1),
       transforms.ToTensor()])
 
+    return 
+
   def __len__(self):
-    return len(self.mask_ids)
+    return len(self.image_filenames)
 
   def __getitem__(self, index):
-    img_id   = self.mask_ids[index]
+    img_ids = self.image_filenames[index]
+    gt_ids = self.gt_filenames[index]
 
-    image = Image.open(self.image_filenames[index])
-    mask = Image.open(self.mask_filenames[index])
+    image = Image.open(img_ids)
+    gt = Image.open(gt_ids)
 
-    vis_mask = colorize.colorize_mask(np.array(mask))
+    gt = np.array(gt)
+
+    # 매핑 적용
+    gt_mapped = np.full_like(gt, self.ignore_label)
+    for k, v in self.id_to_trainid.items():
+        gt_mapped[gt == k] = v
+
+    vis_mask = colorize.colorize_mask(np.array(gt_mapped))
     vis_mask = Image.fromarray(vis_mask)
     
+    gt = Image.fromarray(gt)
     aug_image = self.transform(image)
-    aug_gt = self.transform(mask)
+    aug_gt = self.transform(gt)
     aug_vis_gt = self.transform(vis_mask)
     # aug_image, aug_gt = self.resize(image=image, gt=mask, size=(self.input_width, self.input_height))
     # aug_image, aug_gt = self.rotate_image(image=aug_image, gt=aug_gt, angle=45)

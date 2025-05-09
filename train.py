@@ -14,7 +14,7 @@ from CityScapesSeg_dataloader import CityScapesSeg_dataset
 from utility import colorize
 
 #put a base path below
-base_dir = '/home/addinedu/Documents/GitHub/seg_DenseASPP'
+base_dir = '/home/seg_DenseASPP'
 parser = argparse.ArgumentParser(description='Simple Semantic Segmentation Train')
 
 parser.add_argument('--mode', type=str, help='train or test', default='test')
@@ -120,14 +120,12 @@ def main():
         #시간을 체크해주는 코드 
         start = time.time()
         
-        epoch_IoU = []
-        
         for step, batch_image in enumerate(dataloader):
             sample_image = batch_image['image']
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
             
-            if step > 1: break
+            # if step > 1: break
             
             #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
             #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
@@ -154,23 +152,21 @@ def main():
             predicted_class = torch.argmax(output, dim=1)  # 클래스 인덱스 추출 (B, H, W)
 
             intersection = (predicted_class == sample_gt).sum()  # 정답과 예측 비교
-            union = ((predicted_class > 0) | (sample_gt > 0)).sum()  # 0보다 큰 값 비교
+            union = ((predicted_class > 0) | (sample_gt > 0)).sum().float()  # 0보다 큰 값 비교
             iou = intersection / union if union > 0 else torch.tensor(0.0)
-            epoch_IoU.append(iou.item())  # Store IoU for the batch
-
-        # Calculate average IoU for the epoch
-        avg_IoU = sum(epoch_IoU) / len(epoch_IoU)
-        save_IoU.append(avg_IoU)
+            save_IoU.append(iou.item())
 
         #한 epoch이 끝나고 나면 시간 출력 
         t_elapsed = timedelta(seconds=time.time() - start)
         training_time_left = ((args.num_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600)
-        print(f"Name: {args.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{args.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | train mIoU: {iou:.4f}")
+        print(f"Name: {args.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{args.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | train mIoU: {int(iou):d}")
         torch.save(model.state_dict(), osp.join(args.model_dir, f"{epoch:04d}.pth"))
 
         if len(save_IoU) >= 2:
             if save_IoU[-1] > max(save_IoU[:-1]):
                 torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch:04d}.pth"))
+        # else:
+        #     torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch:04d}.pth"))
 
         #일 단위
         # training_time_left = ((total_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600*24)
@@ -188,13 +184,14 @@ def main():
 
         writer.add_scalar('Results/Loss', loss, global_step=epoch)
         writer.add_scalar('Results/Accuracy', iou, global_step=epoch)
-        return model, save_IoU, epoch
+    
+    return model, save_IoU
 
-def save_best_model(model, save_IoU, epoch):
-    if max(save_IoU):
+def save_best_model(model, save_IoU):
+    if len(save_IoU) == args.num_epochs:
         best_epoch = save_IoU.index(max(save_IoU))
-        torch.save(model.state_dict(), osp.join(args.bestModel_dir, f"{epoch:04d}.pth"))
+        torch.save(model.state_dict(), osp.join(args.bestModel_dir, f"best epoch: {best_epoch}.pth"))
 
 if __name__ == "__main__":
-    model, save_IoU, epoch = main()
-    save_best_model(model, save_IoU, epoch)
+    model, save_IoU = main()
+    save_best_model(model, save_IoU)
