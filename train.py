@@ -32,7 +32,7 @@ parser.add_argument('--higher_model_dir', type=str, help='model directory for sa
 parser.add_argument('--bestModel_dir', type=str, help='model directory for saving',
                     default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_bestModel'))
 parser.add_argument('--log_dir', type=str, help='log directory for tensorboard',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'logs'))
+                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'logs1'))
 parser.add_argument('--pred_dir', type=str, help='prediction image directory',
                     default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'prediction'))
 
@@ -117,9 +117,11 @@ def main():
 
     # 학습
     for epoch in range(args.num_epochs): #100개의 epochs 모든 input date들이 모델에 학습이 되고 output으로 나오는 시각
-        #시간을 체크해주는 코드 
+        #시간을 체크해주는 코드
         start = time.time()
         
+        epoch_IoU = []
+
         for step, batch_image in enumerate(dataloader):
             sample_image = batch_image['image']
             sample_gt = batch_image['gt']
@@ -153,20 +155,26 @@ def main():
 
             intersection = (predicted_class == sample_gt).sum()  # 정답과 예측 비교
             union = ((predicted_class > 0) | (sample_gt > 0)).sum().float()  # 0보다 큰 값 비교
-            iou = intersection / union if union > 0 else torch.tensor(0.0)
-            save_IoU.append(iou.item())
+            iou = intersection / union if union > 0 else 0.0
+            epoch_IoU.append(iou)
+            # save_IoU.append(iou)
+    
+        mean_IoU = sum(epoch_IoU)/len(epoch_IoU)
+        save_IoU.append(mean_IoU)
+        mIoU = mean_IoU
 
         #한 epoch이 끝나고 나면 시간 출력 
         t_elapsed = timedelta(seconds=time.time() - start)
         training_time_left = ((args.num_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600)
-        print(f"Name: {args.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{args.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | train mIoU: {int(iou):d}")
+        print(f"Name: {args.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{args.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | train mIoU: {int(mIoU):d}")
         torch.save(model.state_dict(), osp.join(args.model_dir, f"{epoch:04d}.pth"))
 
         if len(save_IoU) >= 2:
             if save_IoU[-1] > max(save_IoU[:-1]):
-                torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch:04d}.pth"))
-        # else:
-        #     torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch:04d}.pth"))
+                better_IoU = save_IoU.index(save_IoU[-1])
+                torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"better IoU: {better_IoU}.pth"))
+        else:
+            torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch:04d}.pth"))
 
         #일 단위
         # training_time_left = ((total_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600*24)
