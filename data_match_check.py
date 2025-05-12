@@ -5,7 +5,7 @@ from PIL import Image
 import tempfile
 import shutil
 
-gt_dir = r'/home/seg_DenseASPP/CityScapesDataset/gtFine_trainvaltest/gtFine/train'
+gt_dir = r'/home/seg_DenseASPP/CityScapesDataset/gtFine_trainvaltest/gtFine/val'
 gt_data = []
 
 for first_gt_folder in sorted(os.listdir(gt_dir)):
@@ -15,7 +15,7 @@ for first_gt_folder in sorted(os.listdir(gt_dir)):
         if first_gt_file.endswith('_gtFine_labelIds.png'):
             gt_data.append(first_gt_file_path)
 
-image_dir = r'/home/seg_DenseASPP/CityScapesDataset/leftImg8bit_trainvaltest/leftImg8bit/train'
+image_dir = r'/home/seg_DenseASPP/CityScapesDataset/leftImg8bit_trainvaltest/leftImg8bit/val'
 image_data = []
 
 for first_image_folder in sorted(os.listdir(image_dir)):

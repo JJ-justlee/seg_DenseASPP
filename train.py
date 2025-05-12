@@ -26,13 +26,13 @@ parser.add_argument('--root_dir', type=str, help='dataset directory',
 parser.add_argument('--exp_dir', type=str, help='result save directory',
                     default=osp.join(base_dir, 'experiments'))
 parser.add_argument('--model_dir', type=str, help='model directory for saving',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models1'))
+                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_val'))
 parser.add_argument('--higher_model_dir', type=str, help='model directory for saving',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_higher_mIoU'))
+                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_val_higher_mIoU'))
 parser.add_argument('--bestModel_dir', type=str, help='model directory for saving',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_bestModel'))
+                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_val_bestModel'))
 parser.add_argument('--log_dir', type=str, help='log directory for tensorboard',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'logs1'))
+                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'logs_val'))
 parser.add_argument('--pred_dir', type=str, help='prediction image directory',
                     default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'prediction'))
 
@@ -122,7 +122,7 @@ def main():
         
         epoch_IoU = []
 
-        for step, batch_image in enumerate(dataloader):
+        for step, (batch_image, _) in enumerate(dataloader):
             sample_image = batch_image['image']
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
@@ -153,11 +153,20 @@ def main():
             output = torch.softmax(output, dim=1)
             predicted_class = torch.argmax(output, dim=1)  # 클래스 인덱스 추출 (B, H, W)
 
-            intersection = (predicted_class == sample_gt).sum()  # 정답과 예측 비교
-            union = ((predicted_class > 0) | (sample_gt > 0)).sum().float()  # 0보다 큰 값 비교
-            iou = intersection / union if union > 0 else 0.0
-            epoch_IoU.append(iou)
-            # save_IoU.append(iou)
+        for _, batch_image in dataloader:
+            sample_val_image = batch_image['val_image']
+            sample_val_gt = batch_image['val_gt']
+
+            with torch.no_grad():
+                val_logit = model(sample_val_image)
+                val_prediction = torch.softmax(val_logit, dim=1)
+                val_predicted_class = torch.argmax(val_prediction, dim=1)
+
+                intersection = (val_predicted_class == sample_val_gt).sum()  # 정답과 예측 비교
+                union = ((val_predicted_class > 0) | (sample_val_gt > 0)).sum().float()  # 0보다 큰 값 비교
+                iou = intersection / union if union > 0 else 0.0
+                epoch_IoU.append(iou)
+                
     
         mean_IoU = sum(epoch_IoU)/len(epoch_IoU)
         save_IoU.append(mean_IoU)

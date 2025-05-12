@@ -43,19 +43,23 @@ class CityScapesSeg_dataset(Dataset):
         self.input_height = input_height
         self.input_width = input_width
 
-        ignore_label = 255
-        self.id_to_trainid = {-1: ignore_label, 0: ignore_label, 1: ignore_label, 2: ignore_label,
-                            3: ignore_label, 4: ignore_label, 5: ignore_label, 6: ignore_label,
-                            7: 0, 8: 1, 9: ignore_label, 10: ignore_label, 11: 2, 12: 3, 13: 4,
-                            14: ignore_label, 15: ignore_label, 16: ignore_label, 17: 5,
-                            18: ignore_label, 19: 6, 20: 7, 21: 8, 22: 9, 23: 10, 24: 11, 25: 12,
-                            26: 13, 27: 14, 28: 15, 29: ignore_label, 30: ignore_label,
+        self.ignore_label = 255
+        self.id_to_trainid = {-1: self.ignore_label, 0: self.ignore_label, 1: self.ignore_label, 2: self.ignore_label,
+                            3: self.ignore_label, 4: self.ignore_label, 5: self.ignore_label, 6: self.ignore_label,
+                            7: 0, 8: 1, 9: self.ignore_label, 10: self.ignore_label, 11: 2, 12: 3, 13: 4,
+                            14: self.ignore_label, 15: self.ignore_label, 16: self.ignore_label, 17: 5,
+                            18: self.ignore_label, 19: 6, 20: 7, 21: 8, 22: 9, 23: 10, 24: 11, 25: 12,
+                            26: 13, 27: 14, 28: 15, 29: self.ignore_label, 30: self.ignore_label,
                             31: 16, 32: 17, 33: 18}
 
-        self.train_dataset, _, _ = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'gtImagePair')
-        _, self.image_train_data, _ = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'image')
-        _, _, self.gt_train_data = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'gt')
-        # self.val_dataset = get_dataset_pair(directory=root_dir, mode='val')
+        if self.mode == 'train':
+            self.train_dataset, _, _ = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'gtImagePair')
+            _, self.image_train_data, _ = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'image')
+            _, _, self.gt_train_data = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'gt')
+        elif self.mode == 'val':        
+            self.val_dataset, _, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gtImagePair')
+            _, self.image_val_data, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'image')
+            _, _, self.gt_val_data = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gt')
 
         # for i in self.train_dataset:
         #     [os.path.basename(imgf).split('_leftImg8bit') for imgf in self.train_dataset]
@@ -81,30 +85,34 @@ class CityScapesSeg_dataset(Dataset):
     def __getitem__(self, index):
         train_image_path = self.image_train_data[index]
         train_gt_path = self.gt_train_data[index]
-        # val_image_path, val_gt_path = self.val_dataset[index]
+
+        val_image_path = self.image_val_data[index]
+        val_gt_path = self.gt_val_data[index]
         
         train_image = Image.open(train_image_path)
         train_gt = Image.open(train_gt_path)
         
-        # val_image = Image.open(val_image_path)
-        # val_gt = Image.open(val_gt_path)
+        val_image = Image.open(val_image_path)
+        val_gt = Image.open(val_gt_path)
+        
+        train_gt = np.array(train_gt)
         
         """ -------- Mapping id to train id --------"""
-        train_gt = np.array(train_gt)
+        mapped = np.full_like(train_gt, self.ignore_label)
         for k, v in self.id_to_trainid.items():
-            train_gt[train_gt == k] = v
+            mapped[train_gt == k] = v
         
-        vis_train_gt = colorize.colorize_mask(train_gt)
+        vis_train_gt = colorize.colorize_mask(mapped)
         vis_train_gt = Image.fromarray(vis_train_gt)
         """----------------------------------------"""
         
-        train_gt = Image.fromarray(train_gt)
+        train_gt = Image.fromarray(mapped)
         aug_image = self.transform(train_image)
         aug_gt = self.transform(train_gt)
         aug_vis_gt = self.transform(vis_train_gt)
         
-        # aug_val_image = self.val_tranform(val_image)
-        # aug_val_gt = self.val_tranform(val_gt)
+        aug_val_image = self.val_tranform(val_image)
+        aug_val_gt = self.val_tranform(val_gt)
         
         # aug_image, aug_gt = self.resize(image=image, gt=gt, size=(self.input_width, self.input_height))
         # aug_image, aug_gt = self.rotate_image(image=aug_image, gt=aug_gt, angle=45)
@@ -113,13 +121,13 @@ class CityScapesSeg_dataset(Dataset):
         # aug_image, aug_gt = self.flip(image=aug_image, gt=aug_gt)
 
         sample = {'image': aug_image, 'gt': aug_gt, 'vis_gt': aug_vis_gt}
-        # val_sample = {'val_image': aug_val_image, 'val_gt': aug_val_gt}
+        val_sample = {'val_image': aug_val_image, 'val_gt': aug_val_gt}
         
         # preprocessing_transforms = transforms.Compose([ToTensor()])
         # aug_image, aug_gt = preprocessing_transforms(sample)
 
-        # return sample, val_sample
-        return sample
+        return sample, val_sample
+        # return sample
     
 
     def resize(self, image, gt, size):
