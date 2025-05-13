@@ -13,7 +13,6 @@ from PIL import Image
 from utility import colorize
 from glob import glob
 
-
 def get_dataset_pair(directory, mode, kinds_list):
     image_dir = osp.join(directory, 'leftImg8bit_trainvaltest', 'leftImg8bit', mode)
     gt_dir = osp.join(directory, 'gtFine_trainvaltest', 'gtFine', mode)
@@ -39,7 +38,7 @@ def get_dataset_pair(directory, mode, kinds_list):
 
 
 class CityScapesSeg_dataset(Dataset):
-    def __init__(self, root_dir, input_height, input_width):
+    def __init__(self, root_dir, input_height, input_width, dataset):
         self.input_height = input_height
         self.input_width = input_width
 
@@ -52,68 +51,57 @@ class CityScapesSeg_dataset(Dataset):
                             26: 13, 27: 14, 28: 15, 29: self.ignore_label, 30: self.ignore_label,
                             31: 16, 32: 17, 33: 18}
 
-        if self.mode == 'train':
-            self.train_dataset, _, _ = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'gtImagePair')
-            _, self.image_train_data, _ = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'image')
-            _, _, self.gt_train_data = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'gt')
-        elif self.mode == 'val':        
-            self.val_dataset, _, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gtImagePair')
-            _, self.image_val_data, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'image')
-            _, _, self.gt_val_data = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gt')
+        self.dataset = dataset
 
-        # for i in self.train_dataset:
-        #     [os.path.basename(imgf).split('_leftImg8bit') for imgf in self.train_dataset]
-        #     [os.path.basename(gtf).split('_gtFine_labelIds.png') for gtf in self.train_dataset]
-        
-        """DenseASPP"""
-        # Random Scaling: [0.5 ~ 2.0]
-        # Rndom Brightness [-10 ~ 10]
-        # Random Horizontal Flip
-        # Random Crop: 512x512
-        self.transform = transforms.Compose([transforms.RandomResizedCrop(size=256, scale=(0.5, 2.0)),
-                                            transforms.RandomHorizontalFlip(p=0.5), 
-                                            transforms.ColorJitter(brightness=0.1), 
-                                            transforms.ToTensor()])
-        
-        self.val_tranform = transforms.Compose([transforms.Resize(size=256),
+        if self.dataset == 'train':
+            self.gtImagedataset, _, _ = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'gtImagePair')
+            _, self.image_data, _ = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'image')
+            _, _, self.gt_data = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'gt')
+
+            """DenseASPP"""
+            # Random Scaling: [0.5 ~ 2.0]
+            # Rndom Brightness [-10 ~ 10]
+            # Random Horizontal Flip
+            # Random Crop: 512x512
+            self.transform = transforms.Compose([transforms.RandomResizedCrop(size=256, scale=(0.5, 2.0)),
+                                                transforms.RandomHorizontalFlip(p=0.5), 
+                                                transforms.ColorJitter(brightness=0.1), 
                                                 transforms.ToTensor()])
 
+        elif self.dataset == 'val':        
+            self.gtImagedataset, _, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gtImagePair')
+            _, self.image_data, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'image')
+            _, _, self.gt_data = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gt')
+        
+            self.transform = transforms.Compose([transforms.Resize(size=256),
+                                                    transforms.ToTensor()])
+
     def __len__(self):
-        # return len(self.train_dataset)
-        return len(self.image_train_data)
+        return len(self.image_data)
     
     def __getitem__(self, index):
-        train_image_path = self.image_train_data[index]
-        train_gt_path = self.gt_train_data[index]
-
-        val_image_path = self.image_val_data[index]
-        val_gt_path = self.gt_val_data[index]
+        image_path = self.image_data[index]
+        gt_path = self.gt_data[index]
         
-        train_image = Image.open(train_image_path)
-        train_gt = Image.open(train_gt_path)
+        open_image = Image.open(image_path)
+        open_gt = Image.open(gt_path)
         
-        val_image = Image.open(val_image_path)
-        val_gt = Image.open(val_gt_path)
-        
-        train_gt = np.array(train_gt)
+        array_gt = np.array(open_gt)
         
         """ -------- Mapping id to train id --------"""
-        mapped = np.full_like(train_gt, self.ignore_label)
+        mapped = np.full_like(array_gt, self.ignore_label)
         for k, v in self.id_to_trainid.items():
-            mapped[train_gt == k] = v
+            mapped[array_gt == k] = v
         
-        vis_train_gt = colorize.colorize_mask(mapped)
-        vis_train_gt = Image.fromarray(vis_train_gt)
+        gt_mapped = Image.fromarray(mapped.astype(np.uint8))
         """----------------------------------------"""
-        
-        train_gt = Image.fromarray(mapped)
-        aug_image = self.transform(train_image)
-        aug_gt = self.transform(train_gt)
-        aug_vis_gt = self.transform(vis_train_gt)
-        
-        aug_val_image = self.val_tranform(val_image)
-        aug_val_gt = self.val_tranform(val_gt)
-        
+
+        vis_gt = colorize.colorize_mask(mapped)
+        vis_gt = Image.fromarray(vis_gt)
+        aug_image = self.transform(open_image)
+        aug_gt = self.transform(gt_mapped)
+        aug_vis_gt = self.transform(vis_gt)
+                
         # aug_image, aug_gt = self.resize(image=image, gt=gt, size=(self.input_width, self.input_height))
         # aug_image, aug_gt = self.rotate_image(image=aug_image, gt=aug_gt, angle=45)
         # aug_image         = np.array(aug_image, dtype= np.float32) / 255.
@@ -121,13 +109,11 @@ class CityScapesSeg_dataset(Dataset):
         # aug_image, aug_gt = self.flip(image=aug_image, gt=aug_gt)
 
         sample = {'image': aug_image, 'gt': aug_gt, 'vis_gt': aug_vis_gt}
-        val_sample = {'val_image': aug_val_image, 'val_gt': aug_val_gt}
         
         # preprocessing_transforms = transforms.Compose([ToTensor()])
         # aug_image, aug_gt = preprocessing_transforms(sample)
 
-        return sample, val_sample
-        # return sample
+        return sample
     
 
     def resize(self, image, gt, size):

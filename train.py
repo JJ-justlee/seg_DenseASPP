@@ -95,14 +95,23 @@ def main():
     # 텐서보드 셋팅
     writer = SummaryWriter(args.log_dir)
 
-    CityScapes_dataset = CityScapesSeg_dataset(root_dir=args.root_dir,
-                                    input_height=args.input_height, input_width=args.input_width)
-    #root_dir(json_path와 image_dir변수에 들어있는)는 위 coco_dataset변수에 선언된 값, 즉 root_dir에 담긴 args.root_dir로 경로가 선언된다
-    dataloader = DataLoader(CityScapes_dataset,
+    CityScapes_train_dataset = CityScapesSeg_dataset(root_dir=args.root_dir,
+                                    input_height=args.input_height, input_width=args.input_width, dataset = 'train')
+    
+    train_dataloader = DataLoader(CityScapes_train_dataset,
                             batch_size=args.batch_size,
                             shuffle=True,
                             num_workers=4,
                             pin_memory=True)
+
+    CityScapes_val_dataset = CityScapesSeg_dataset(root_dir=args.root_dir,
+                                    input_height=args.input_height, input_width=args.input_width, dataset = 'val')
+
+    val_dataloader = DataLoader(CityScapes_val_dataset,
+                        batch_size=args.batch_size,
+                        shuffle=True,
+                        num_workers=4,
+                        pin_memory=True)
 
     # 뉴럴네트워크 로드
     #model = models.segmentation.fcn_resnet50(weights_backbone=True, num_classes=1)
@@ -120,9 +129,7 @@ def main():
         #시간을 체크해주는 코드
         start = time.time()
         
-        epoch_IoU = []
-
-        for step, (batch_image, _) in enumerate(dataloader):
+        for step, batch_image in enumerate(train_dataloader):
             sample_image = batch_image['image']
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
@@ -150,32 +157,35 @@ def main():
 
             optimizer.step()
             
-            output = torch.softmax(output, dim=1)
+            output = torch.softmax(output, dim=1) #(8, 19, 256, 256)
             predicted_class = torch.argmax(output, dim=1)  # 클래스 인덱스 추출 (B, H, W)
 
-        for _, batch_image in dataloader:
-            sample_val_image = batch_image['val_image']
-            sample_val_gt = batch_image['val_gt']
+        for batch_image in val_dataloader:
+            sample_val_image = batch_image['image'].to(device)
+            sample_val_gt = batch_image['gt'].to(device)
 
             with torch.no_grad():
                 val_logit = model(sample_val_image)
                 val_prediction = torch.softmax(val_logit, dim=1)
                 val_predicted_class = torch.argmax(val_prediction, dim=1)
 
-                intersection = (val_predicted_class == sample_val_gt).sum()  # 정답과 예측 비교
-                union = ((val_predicted_class > 0) | (sample_val_gt > 0)).sum().float()  # 0보다 큰 값 비교
-                iou = intersection / union if union > 0 else 0.0
-                epoch_IoU.append(iou)
+            n_class = 19
+
+            for cls in range(n_class):
+                pred_cls = (val_predicted_class == cls)
+                gt_cls = (sample_val_gt == cls)
+
+                intersection = (pred_cls & gt_cls).sum().float()
+                union = (pred_cls | gt_cls).sum().float()
+                iou = intersection / union if union > 0 else torch.tensor(0.0)
+                save_IoU.append(iou)
                 
-    
-        mean_IoU = sum(epoch_IoU)/len(epoch_IoU)
-        save_IoU.append(mean_IoU)
-        mIoU = mean_IoU
+            mIoU = sum(save_IoU) / len(save_IoU) * 100
 
         #한 epoch이 끝나고 나면 시간 출력 
         t_elapsed = timedelta(seconds=time.time() - start)
         training_time_left = ((args.num_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600)
-        print(f"Name: {args.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{args.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | train mIoU: {int(mIoU):d}")
+        print(f"Name: {args.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{args.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {int(mIoU):d}")
         torch.save(model.state_dict(), osp.join(args.model_dir, f"{epoch:04d}.pth"))
 
         if len(save_IoU) >= 2:
@@ -196,11 +206,11 @@ def main():
         writer.add_image('Input/Gt', sample_vis_gt[idx_random], global_step=epoch)
 
         # print(predicted_class.shape)
-        predicted_class = torch.unsqueeze(predicted_class, dim=1)
-        writer.add_image('Results/Prediction', predicted_class[idx_random], global_step=epoch)
+        predicted_class = torch.unsqueeze(predicted_class, dim=1).float()
+        writer.add_image('Results/trained_result', predicted_class[idx_random], global_step=epoch)
 
         writer.add_scalar('Results/Loss', loss, global_step=epoch)
-        writer.add_scalar('Results/Accuracy', iou, global_step=epoch)
+        writer.add_scalar('Results/Accuracy', mIoU, global_step=epoch)
     
     return model, save_IoU
 
