@@ -121,14 +121,18 @@ def main():
     # 최적화
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     criterion = torch.nn.CrossEntropyLoss(ignore_index=255).cuda()
-
-    save_IoU = []
+    
+    n_class = 19
+    mIoU_list = []
 
     # 학습
     for epoch in range(args.num_epochs): #100개의 epochs 모든 input date들이 모델에 학습이 되고 output으로 나오는 시각
         #시간을 체크해주는 코드
         start = time.time()
         
+        iou_per_class = [0.0 for _ in range(n_class)]
+        total_per_class = [0 for _ in range(n_class)]
+
         for step, batch_image in enumerate(train_dataloader):
             sample_image = batch_image['image']
             sample_gt = batch_image['gt']
@@ -169,18 +173,28 @@ def main():
                 val_prediction = torch.softmax(val_logit, dim=1)
                 val_predicted_class = torch.argmax(val_prediction, dim=1)
 
-            n_class = 19
-
             for cls in range(n_class):
                 pred_cls = (val_predicted_class == cls)
                 gt_cls = (sample_val_gt == cls)
 
                 intersection = (pred_cls & gt_cls).sum().float()
                 union = (pred_cls | gt_cls).sum().float()
-                iou = intersection / union if union > 0 else torch.tensor(0.0)
-                save_IoU.append(iou)
-                
-            mIoU = sum(save_IoU) / len(save_IoU) * 100
+
+                if union > 0:
+                    iou = intersection / union
+                    #클래스에 IoU값을 더함
+                    iou_per_class[cls] += iou
+                    #클래스가 등장한 횟수 더함
+                    total_per_class[cls] += 1
+
+        final_iou_list = []
+        for cls in range(n_class):
+            if total_per_class[cls] > 0:
+                final_iou_list.append(iou_per_class[cls] / total_per_class[cls])
+
+        mIoU = (sum(final_iou_list) / len(final_iou_list)) * 100
+        mIoU_list.append(mIoU)
+
 
         #한 epoch이 끝나고 나면 시간 출력 
         t_elapsed = timedelta(seconds=time.time() - start)
@@ -188,9 +202,9 @@ def main():
         print(f"Name: {args.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{args.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {int(mIoU):d}")
         torch.save(model.state_dict(), osp.join(args.model_dir, f"{epoch:04d}.pth"))
 
-        if len(save_IoU) >= 2:
-            if save_IoU[-1] > max(save_IoU[:-1]):
-                better_IoU = save_IoU.index(save_IoU[-1])
+        if len(mIoU_list) >= 2:
+            if mIoU_list[-1] > max(mIoU_list[:-1]):
+                better_IoU = mIoU_list.index(mIoU_list[-1])
                 torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"better IoU: {better_IoU}.pth"))
         else:
             torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch:04d}.pth"))
@@ -212,13 +226,13 @@ def main():
         writer.add_scalar('Results/Loss', loss, global_step=epoch)
         writer.add_scalar('Results/Accuracy', mIoU, global_step=epoch)
     
-    return model, save_IoU
+    return model, mIoU_list
 
-def save_best_model(model, save_IoU):
-    if len(save_IoU) == args.num_epochs:
-        best_epoch = save_IoU.index(max(save_IoU))
+def save_best_model(model, mIoU_list):
+    if len(mIoU_list) == args.num_epochs:
+        best_epoch = mIoU_list.index(max(mIoU_list))
         torch.save(model.state_dict(), osp.join(args.bestModel_dir, f"best epoch: {best_epoch}.pth"))
 
 if __name__ == "__main__":
-    model, save_IoU = main()
-    save_best_model(model, save_IoU)
+    model, mIoU_list = main()
+    save_best_model(model, mIoU_list)

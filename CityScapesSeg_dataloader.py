@@ -6,12 +6,15 @@ import torch.nn.functional as F
 import os.path as osp
 import torchvision.transforms.functional as TF
 import tempfile
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
 from utility import colorize
 from glob import glob
+
 
 def get_dataset_pair(directory, mode, kinds_list):
     image_dir = osp.join(directory, 'leftImg8bit_trainvaltest', 'leftImg8bit', mode)
@@ -63,18 +66,34 @@ class CityScapesSeg_dataset(Dataset):
             # Rndom Brightness [-10 ~ 10]
             # Random Horizontal Flip
             # Random Crop: 512x512
-            self.transform = transforms.Compose([transforms.RandomResizedCrop(size=256, scale=(0.5, 2.0)),
-                                                transforms.RandomHorizontalFlip(p=0.5), 
-                                                transforms.ColorJitter(brightness=0.1), 
-                                                transforms.ToTensor()])
+            self.transform = A.Compose([A.RandomResizedCrop(size=(256, 256), scale=(0.5, 2.0)),
+                                                A.RandomHorizontalFlip(p=0.5), 
+                                                A.ColorJitter(brightness=0.1), 
+                                                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                                                ToTensorV2()
+                                                ],
+                                                additional_targets={
+                                                    'gt_mapped': 'mask',
+                                                    'vis_gt': 'mask'
+                                                    }
+                                                )
 
         elif self.dataset == 'val':        
             self.gtImagedataset, _, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gtImagePair')
             _, self.image_data, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'image')
             _, _, self.gt_data = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gt')
         
-            self.transform = transforms.Compose([transforms.Resize(size=256),
-                                                    transforms.ToTensor()])
+            self.transform = A.Compose([A.RandomResizedCrop(size=(256, 256), scale=(0.5, 2.0)),
+                                                A.RandomHorizontalFlip(p=0.5), 
+                                                A.ColorJitter(brightness=0.1), 
+                                                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                                                ToTensorV2()
+                                                ],
+                                                additional_targets={
+                                                    'gt_mapped': 'mask',
+                                                    'vis_gt': 'mask'
+                                                    }
+                                                )
 
     def __len__(self):
         return len(self.image_data)
@@ -98,9 +117,17 @@ class CityScapesSeg_dataset(Dataset):
 
         vis_gt = colorize.colorize_mask(mapped)
         vis_gt = Image.fromarray(vis_gt)
-        aug_image = self.transform(open_image)
-        aug_gt = self.transform(gt_mapped)
-        aug_vis_gt = self.transform(vis_gt)
+        transformed = self.transform(image=np.array(open_image), 
+                                     gt_mapped=np.array(gt_mapped), 
+                                     vis_gt=np.array(vis_gt)
+                                     )
+        
+        aug_image = transformed["image"]
+        aug_gt = transformed["gt_mapped"]
+        aug_vis_gt = transformed['vis_gt']
+        # aug_image = self.transform(open_image)
+        # aug_gt = self.transform(gt_mapped)
+        # aug_vis_gt = self.transform(vis_gt)
                 
         # aug_image, aug_gt = self.resize(image=image, gt=gt, size=(self.input_width, self.input_height))
         # aug_image, aug_gt = self.rotate_image(image=aug_image, gt=aug_gt, angle=45)
@@ -137,39 +164,16 @@ class CityScapesSeg_dataset(Dataset):
 
     def flip(self, image, gt):
         hflip = random.random()
-        # vflip = random.random()
+        vflip = random.random()
         if hflip > 0.5:
             image = (image[:, ::-1, :]).copy()
             gt = (gt[:, ::-1]).copy()
 
-        # if vflip > 0.5:
-        #     image = (image[::-1, :, :]).copy()
-        #     gt = (gt[::-1, :]).copy()
+        if vflip > 0.5:
+            image = (image[::-1, :, :]).copy()
+            gt = (gt[::-1, :]).copy()
 
         return image, gt
-
-  # #DenseASPP aug
-  # def random_flipping_horizontally(self, image, gt):
-  
-  #   return image, gt
-
-  # #DenseASPP aug
-  # #range 0.5, 2
-  # def random_scalig(self, image, gt):
-  
-  #   return image, gt
-
-  # #DenseASPP aug
-  # #range -10, 10
-  # def random_brightness_jittering(self, image, gt):
-
-  #   return image, gt
-  
-  # #DenseASPP aug
-  # #512, 512 image patches
-  # def random_crop(self, image, gt):
-
-  #   return image, gt
 
 
 class ToTensor(object):
