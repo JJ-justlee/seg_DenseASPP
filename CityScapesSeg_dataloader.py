@@ -6,8 +6,6 @@ import torch.nn.functional as F
 import os.path as osp
 import torchvision.transforms.functional as TF
 import tempfile
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 
 from torch.utils.data import Dataset
 from torchvision import transforms
@@ -61,39 +59,10 @@ class CityScapesSeg_dataset(Dataset):
             _, self.image_data, _ = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'image')
             _, _, self.gt_data = get_dataset_pair(directory=root_dir, mode='train', kinds_list = 'gt')
 
-            """DenseASPP"""
-            # Random Scaling: [0.5 ~ 2.0]
-            # Rndom Brightness [-10 ~ 10]
-            # Random Horizontal Flip
-            # Random Crop: 512x512
-            self.transform = A.Compose([A.RandomResizedCrop(size=(256, 256), scale=(0.5, 2.0)),
-                                                A.RandomHorizontalFlip(p=0.5), 
-                                                A.ColorJitter(brightness=0.1), 
-                                                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                                                ToTensorV2()
-                                                ],
-                                                additional_targets={
-                                                    'gt_mapped': 'mask',
-                                                    'vis_gt': 'mask'
-                                                    }
-                                                )
-
         elif self.dataset == 'val':        
             self.gtImagedataset, _, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gtImagePair')
             _, self.image_data, _ = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'image')
             _, _, self.gt_data = get_dataset_pair(directory=root_dir, mode='val', kinds_list = 'gt')
-        
-            self.transform = A.Compose([A.RandomResizedCrop(size=(256, 256), scale=(0.5, 2.0)),
-                                                A.RandomHorizontalFlip(p=0.5), 
-                                                A.ColorJitter(brightness=0.1), 
-                                                A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-                                                ToTensorV2()
-                                                ],
-                                                additional_targets={
-                                                    'gt_mapped': 'mask',
-                                                    'vis_gt': 'mask'
-                                                    }
-                                                )
 
     def __len__(self):
         return len(self.image_data)
@@ -117,31 +86,46 @@ class CityScapesSeg_dataset(Dataset):
 
         vis_gt = colorize.colorize_mask(mapped)
         vis_gt = Image.fromarray(vis_gt)
-        transformed = self.transform(image=np.array(open_image), 
-                                     gt_mapped=np.array(gt_mapped), 
-                                     vis_gt=np.array(vis_gt)
-                                     )
         
-        aug_image = transformed["image"]
-        aug_gt = transformed["gt_mapped"]
-        aug_vis_gt = transformed['vis_gt']
         # aug_image = self.transform(open_image)
         # aug_gt = self.transform(gt_mapped)
         # aug_vis_gt = self.transform(vis_gt)
-                
+        
         # aug_image, aug_gt = self.resize(image=image, gt=gt, size=(self.input_width, self.input_height))
         # aug_image, aug_gt = self.rotate_image(image=aug_image, gt=aug_gt, angle=45)
         # aug_image         = np.array(aug_image, dtype= np.float32) / 255.
         # aug_gt            = np.array(aug_gt,    dtype= np.float32)
         # aug_image, aug_gt = self.flip(image=aug_image, gt=aug_gt)
 
-        sample = {'image': aug_image, 'gt': aug_gt, 'vis_gt': aug_vis_gt}
+        aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_crop(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
+        #crop 전에 filp 먼저 했을 수도 있음. 확인 필요
+        
+        aug_image = np.array(aug_image, dtype=np.float32) / 255.0
+        aug_gt = np.array(aug_gt, dtype=np.uint8)
+        aug_vis_gt = np.array(aug_vis_gt, dtype=np.uint8)
+        
+        # vis_gt = colorize.colorize_mask(aug_vis_gt)
+        # vis_gt = Image.fromarray(vis_gt)
+
+        tensor_image = torch.from_numpy(aug_image.transpose(2, 0, 1)).float()
+        tensor_gt = torch.from_numpy(aug_gt).long()
+        tensor_vis_gt = torch.from_numpy(aug_vis_gt).long()
+
+        sample = {'image': tensor_image, 'gt': tensor_gt, 'vis_gt': tensor_vis_gt}
         
         # preprocessing_transforms = transforms.Compose([ToTensor()])
-        # aug_image, aug_gt = preprocessing_transforms(sample)
+        # aug_image, aug_gt, aug_vis_gt = preprocessing_transforms(sample)
 
         return sample
     
+    """DenseASPP"""
+    # Random Scaling: [0.5 ~ 2.0]
+    # Rndom Brightness [-10 ~ 10]
+    # Random Horizontal Flip
+    # Random Crop: 512x512
 
     def resize(self, image, gt, size):
         resized_image = image.resize(size, Image.BICUBIC)
@@ -174,6 +158,51 @@ class CityScapesSeg_dataset(Dataset):
             gt = (gt[::-1, :]).copy()
 
         return image, gt
+
+    #DenseASPP aug
+    def random_flipping_horizontally(self, image, gt, vis_gt):
+        hflip = random.random()
+
+        if hflip > 0.5:
+            image = TF.hflip(image)
+            gt = TF.hflip(gt)
+            vis_gt = TF.hflip(vis_gt)
+
+        return image, gt, vis_gt
+
+    #DenseASPP aug
+    #range 0.5, 2
+    def random_scaling(self, image, gt, vis_gt):
+        scale = random.uniform(0.5, 2.0)
+        height = int(image.height * scale)
+        width = int(image.width * scale)
+        image = TF.resize(image, (height, width))
+        gt = TF.resize(gt, (height, width), interpolation=TF.InterpolationMode.NEAREST)
+        vis_gt = TF.resize(vis_gt, (height, width), interpolation=TF.InterpolationMode.NEAREST)
+        
+        return image, gt, vis_gt
+
+    #DenseASPP aug
+    #range -10, 10
+    def random_brightness_jittering(self, image, gt, vis_gt):
+        # image = TF.adjust_brightness(image, brightness_factor=random.uniform(-10, 10))
+        image_np = np.array(image).astype(np.float32)
+        shift = random.uniform(-10, 10)
+        image_np += shift
+        image_np = np.clip(image_np, 0, 255)
+        image = Image.fromarray(image_np.astype(np.uint8))
+        
+        return image, gt, vis_gt
+
+    #DenseASPP aug
+    #512, 512 image patches
+    def random_crop(self, image, gt, vis_gt):
+        i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(512, 512))
+        image = TF.crop(image, i, j, h, w)
+        gt = TF.crop(gt, i, j, h, w)
+        vis_gt = TF.crop(gt, i, j, h, w)
+        
+        return image, gt, vis_gt
 
 
 class ToTensor(object):

@@ -205,7 +205,7 @@ def main():
         if len(mIoU_list) >= 2:
             if mIoU_list[-1] > max(mIoU_list[:-1]):
                 better_IoU = mIoU_list.index(mIoU_list[-1])
-                torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"better IoU: {better_IoU}.pth"))
+                torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"better IoU: {better_IoU:04d}.pth"))
         else:
             torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch:04d}.pth"))
 
@@ -217,6 +217,7 @@ def main():
         idx_random = torch.randint(0, sample_image.size(0), (1,)).item()
 
         writer.add_image('Input/Image', sample_image[idx_random], global_step=epoch)
+
         writer.add_image('Input/Gt', sample_vis_gt[idx_random], global_step=epoch)
 
         # print(predicted_class.shape)
