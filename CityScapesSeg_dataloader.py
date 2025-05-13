@@ -77,14 +77,12 @@ class CityScapesSeg_dataset(Dataset):
         array_gt = np.array(open_gt)
         
         """ -------- Mapping id to train id --------"""
-        mapped = np.full_like(array_gt, self.ignore_label)
+        gt_mapped = np.full_like(array_gt, self.ignore_label)
         for k, v in self.id_to_trainid.items():
-            mapped[array_gt == k] = v
-        
-        gt_mapped = Image.fromarray(mapped.astype(np.uint8))
+            gt_mapped[array_gt == k] = v
         """----------------------------------------"""
 
-        vis_gt = colorize.colorize_mask(mapped)
+        vis_gt = colorize.colorize_mask(gt_mapped)
         vis_gt = Image.fromarray(vis_gt)
         
         # aug_image = self.transform(open_image)
@@ -106,13 +104,10 @@ class CityScapesSeg_dataset(Dataset):
         aug_image = np.array(aug_image, dtype=np.float32) / 255.0
         aug_gt = np.array(aug_gt, dtype=np.uint8)
         aug_vis_gt = np.array(aug_vis_gt, dtype=np.uint8)
-        
-        # vis_gt = colorize.colorize_mask(aug_vis_gt)
-        # vis_gt = Image.fromarray(vis_gt)
 
         tensor_image = torch.from_numpy(aug_image.transpose(2, 0, 1)).float()
         tensor_gt = torch.from_numpy(aug_gt).long()
-        tensor_vis_gt = torch.from_numpy(aug_vis_gt).long()
+        tensor_vis_gt = torch.from_numpy(aug_vis_gt.transpose(2, 0, 1)).float() / 255.0
 
         sample = {'image': tensor_image, 'gt': tensor_gt, 'vis_gt': tensor_vis_gt}
         
@@ -163,6 +158,11 @@ class CityScapesSeg_dataset(Dataset):
     def random_flipping_horizontally(self, image, gt, vis_gt):
         hflip = random.random()
 
+        if isinstance(gt, np.ndarray):
+            gt = Image.fromarray(gt)
+        if isinstance(vis_gt, np.ndarray):
+            vis_gt = Image.fromarray(vis_gt)
+
         if hflip > 0.5:
             image = TF.hflip(image)
             gt = TF.hflip(gt)
@@ -176,10 +176,18 @@ class CityScapesSeg_dataset(Dataset):
         scale = random.uniform(0.5, 2.0)
         height = int(image.height * scale)
         width = int(image.width * scale)
-        image = TF.resize(image, (height, width))
+        
+        # numpy to PIL
+        if isinstance(gt, np.ndarray):
+            gt = Image.fromarray(gt)
+        if isinstance(vis_gt, np.ndarray):
+            vis_gt = Image.fromarray(vis_gt)
+
+        # Resize
+        image = TF.resize(image, (height, width))  # bilinear
         gt = TF.resize(gt, (height, width), interpolation=TF.InterpolationMode.NEAREST)
         vis_gt = TF.resize(vis_gt, (height, width), interpolation=TF.InterpolationMode.NEAREST)
-        
+
         return image, gt, vis_gt
 
     #DenseASPP aug
@@ -198,6 +206,12 @@ class CityScapesSeg_dataset(Dataset):
     #512, 512 image patches
     def random_crop(self, image, gt, vis_gt):
         i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(512, 512))
+
+        if isinstance(gt, np.ndarray):
+            gt = Image.fromarray(gt)
+        if isinstance(vis_gt, np.ndarray):
+            vis_gt = Image.fromarray(vis_gt)
+
         image = TF.crop(image, i, j, h, w)
         gt = TF.crop(gt, i, j, h, w)
         vis_gt = TF.crop(gt, i, j, h, w)
