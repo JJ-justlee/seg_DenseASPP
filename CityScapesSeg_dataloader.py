@@ -81,9 +81,9 @@ class CityScapesSeg_dataset(Dataset):
         for k, v in self.id_to_trainid.items():
             gt_mapped[array_gt == k] = v
         """----------------------------------------"""
-
+        
         vis_gt = colorize.colorize_mask(gt_mapped)
-        vis_gt = Image.fromarray(vis_gt)
+        # vis_gt = Image.fromarray(vis_gt)
         
         # aug_image = self.transform(open_image)
         # aug_gt = self.transform(gt_mapped)
@@ -96,18 +96,19 @@ class CityScapesSeg_dataset(Dataset):
         # aug_image, aug_gt = self.flip(image=aug_image, gt=aug_gt)
 
         aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
-        aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
+        aug_image = self.random_brightness_jittering(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
         aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
         aug_image, aug_gt, aug_vis_gt = self.random_crop(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
         #crop 전에 filp 먼저 했을 수도 있음. 확인 필요
-        
-        aug_image = np.array(aug_image, dtype=np.float32) / 255.0
-        aug_gt = np.array(aug_gt, dtype=np.uint8)
-        aug_vis_gt = np.array(aug_vis_gt, dtype=np.uint8)
 
-        tensor_image = torch.from_numpy(aug_image.transpose(2, 0, 1)).float()
-        tensor_gt = torch.from_numpy(aug_gt).long()
-        tensor_vis_gt = torch.from_numpy(aug_vis_gt.transpose(2, 0, 1)).float() / 255.0
+        aug_image = np.array(aug_image, dtype=np.float32) / 255.0
+        aug_gt = np.array(aug_gt, dtype=np.int32)
+        aug_vis_gt = np.array(aug_vis_gt)
+
+        if isinstance(aug_image, np.ndarray) and isinstance(aug_gt, np.ndarray) and isinstance(aug_vis_gt, np.ndarray):
+            tensor_image = torch.from_numpy(aug_image.transpose(2, 0, 1)).float()
+            tensor_gt = torch.from_numpy(aug_gt).long()
+            tensor_vis_gt = torch.from_numpy(aug_vis_gt)
 
         sample = {'image': tensor_image, 'gt': tensor_gt, 'vis_gt': tensor_vis_gt}
         
@@ -186,7 +187,8 @@ class CityScapesSeg_dataset(Dataset):
         # Resize
         image = TF.resize(image, (height, width))  # bilinear
         gt = TF.resize(gt, (height, width), interpolation=TF.InterpolationMode.NEAREST)
-        vis_gt = TF.resize(vis_gt, (height, width), interpolation=TF.InterpolationMode.NEAREST)
+        # vis_gt = TF.resize(vis_gt, (height, width), interpolation=TF.InterpolationMode.NEAREST)
+        vis_gt = TF.resize(vis_gt, (height, width))
 
         return image, gt, vis_gt
 
@@ -214,7 +216,7 @@ class CityScapesSeg_dataset(Dataset):
 
         image = TF.crop(image, i, j, h, w)
         gt = TF.crop(gt, i, j, h, w)
-        vis_gt = TF.crop(gt, i, j, h, w)
+        vis_gt = TF.crop(vis_gt, i, j, h, w)
         
         return image, gt, vis_gt
 

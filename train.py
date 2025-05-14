@@ -26,13 +26,13 @@ parser.add_argument('--root_dir', type=str, help='dataset directory',
 parser.add_argument('--exp_dir', type=str, help='result save directory',
                     default=osp.join(base_dir, 'experiments'))
 parser.add_argument('--model_dir', type=str, help='model directory for saving',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_val'))
+                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models'))
 parser.add_argument('--higher_model_dir', type=str, help='model directory for saving',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_val_higher_mIoU'))
+                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_higher_mIoU'))
 parser.add_argument('--bestModel_dir', type=str, help='model directory for saving',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_val_bestModel'))
+                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_bestModel'))
 parser.add_argument('--log_dir', type=str, help='log directory for tensorboard',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'logs_val'))
+                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'logs'))
 parser.add_argument('--pred_dir', type=str, help='prediction image directory',
                     default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'prediction'))
 
@@ -44,8 +44,10 @@ parser.add_argument('--ckpt_name', type=str, help='saved weight file name', defa
 parser.add_argument('--input_height', type=int, help='model input height size ', default=256)
 parser.add_argument('--input_width', type=int, help='model input width size ', default=256)
 parser.add_argument('--batch_size', type=int, help='input batch size for training ', default=8)
-parser.add_argument('--learning_rate', type=int, help='learning rate ', default=1e-3)
-parser.add_argument('--num_epochs', type=int, help='epoch number for training', default=100)
+# parser.add_argument('--learning_rate', type=int, help='learning rate ', default=1e-3) #0.001
+parser.add_argument('--learning_rate', type=int, help='learning rate ', default=3e-4) #0.0003
+# parser.add_argument('--num_epochs', type=int, help='epoch number for training', default=100)
+parser.add_argument('--num_epochs', type=int, help='epoch number for training', default=80)
 parser.add_argument('--gpu', type=int, help='GPU id to use', default=0)
 
 #args = parser.parse_args()
@@ -138,7 +140,7 @@ def main():
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
             
-            # if step > 1: break
+            if step > 1: break
             
             #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
             #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
@@ -215,13 +217,18 @@ def main():
         
         # 텐서보드
         idx_random = torch.randint(0, sample_image.size(0), (1,)).item()
-
+        # print(idx_random)
+        # print(sample_image.shape)
         writer.add_image('Input/Image', sample_image[idx_random], global_step=epoch)
-
+        
+        # sample_vis_gt = sample_vis_gt[0] #배치 제거
+        # print(sample_vis_gt.shape)
+        sample_vis_gt = sample_vis_gt.permute(0, 3, 1, 2) #(B, H, W, C) > (B, C, H, W)
+        # print(sample_vis_gt.shape)
         writer.add_image('Input/Gt', sample_vis_gt[idx_random], global_step=epoch)
 
         # print(predicted_class.shape)
-        predicted_class = torch.unsqueeze(predicted_class, dim=1).float()
+        predicted_class = torch.unsqueeze(predicted_class, dim=1)
         writer.add_image('Results/trained_result', predicted_class[idx_random], global_step=epoch)
 
         writer.add_scalar('Results/Loss', loss, global_step=epoch)
