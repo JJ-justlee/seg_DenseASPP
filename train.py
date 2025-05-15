@@ -198,13 +198,6 @@ def main():
         # print(sample_vis_gt.shape)
         writer.add_image('Input/Gt', sample_vis_gt[idx_random], global_step=epoch)
 
-        # print(type(predicted_class))
-        # predicted_class = predicted_class[idx_random]
-        # predicted_class = torch.unsqueeze(predicted_class, dim=1)
-        # predicted_class = predicted_class.detach().cpu().numpy()
-        # predicted_class = colorize_mask(predicted_class)
-        # predicted_class = np.array(predicted_class)
-        # predicted_class = Image.fromarray(predicted_class)
         # 예측 클래스에서 하나 선택
         predicted_class = predicted_class[idx_random] # shape: (H, W)
         print(type(predicted_class))
