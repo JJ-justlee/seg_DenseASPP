@@ -3,4 +3,5 @@
 /se_seg
 /.vscode
 /experiments
+**/__pycache__/
 utility/__pycache__/colorize.cpython-310.pyc

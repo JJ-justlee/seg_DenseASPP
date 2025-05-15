@@ -14,37 +14,12 @@ from val_data_loader import CityScapesSegValDataset
 
 from PIL import Image
 
-parser = argparse.ArgumentParser(description='Simmple Semantic Segmentation Inference')
+from Argument.Directory.Inference_Directories import Inference_Dics_args
+from Argument.Parameter.Inference_Parameters import  Inference_Parameter_args
 
-base_dir = '/home/addinedu/Documents/GitHub/seg_DenseASPP'
-# Directory
-parser.add_argument('--root_dir', type=str, help='dataset directory',
-                    default=osp.join(base_dir, 'CityScapesDataset'))
-# parser.add_argument('--save_dir', type=str, help='model directory for saveing',
-#                     default=osp.join(base_dir, 'experiments', 'DenseAsppWithCitySacapes', 'models', 'firstTraining'))
-parser.add_argument('--save_dir', type=str, help='model directory for saveing',
-                    default=osp.join(base_dir, 'experiments', 'DenseAsppWithCitySacapes', 'models', 'secondTraining'))
-# parser.add_argument('--pred_dir', type=str, help='prediction image directory',
-#                     default=osp.join(base_dir, 'experiments', 'DenseAsppWithCitySacapes', 'prediction', 'normal_aug'))
-# parser.add_argument('--pred_dir', type=str, help='prediction image directory',
-#                     default=osp.join(base_dir, 'experiments', 'DenseAsppWithCitySacapes', 'prediction', 'DenseASPP_aug'))
-parser.add_argument('--pred_dir', type=str, help='prediction image directory',
-                    default=osp.join(base_dir, 'experiments', 'DenseAsppWithCitySacapes', 'prediction', 'DenseASPP_aug3'))
+arg_Dic = Inference_Dics_args()
 
-
-# Inferencey
-parser.add_argument('--ckpt_name', type=str, help='saved weight file name', default='0099.pth')
-parser.add_argument('--raw_height', type=int, help='image raw height size', default=1080)
-parser.add_argument('--raw_width', type=int, help='image raw width size', default=1920)
-
-# Parameter
-parser.add_argument('--input_height', type=int, help='model input height size ', default=256)
-parser.add_argument('--input_width', type=int, help='model input width size ', default=256)
-parser.add_argument('--batch_size', type=int, help='input batch size for training ', default=8)
-parser.add_argument('--gpu', type=int, help='GPU id to use', default=0)
-
-#args = parser.parse_args()
-args, unknown = parser.parse_known_args()
+arg_parameter = Inference_Parameter_args()
 
 color_list = [7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33]
 color_map = [(128, 64, 128), (244, 35, 232), (70, 70, 70), (102, 102, 156), (190, 153, 153), (153, 153, 153),
@@ -58,7 +33,7 @@ def restore_original_size(result, mode='nearest'):
         result = result.unsqueeze(1)  # Add channel dimension
 
     result = result.float()
-    result = F.interpolate(result, size=(args.raw_height, args.raw_width), mode=mode)
+    result = F.interpolate(result, size=(arg_parameter.raw_height, arg_parameter.raw_width), mode=mode)
 
     return result
 
@@ -95,20 +70,20 @@ def cover_colormap(image):
 def test():
         # GPU 셋팅
     if torch.cuda.is_available():
-        if args.gpu is not None:
-            device = torch.device(f'cuda:{args.gpu}')
-            print("Use GPU: {} for training".format(args.gpu))
+        if arg_parameter.gpu is not None:
+            device = torch.device(f'cuda:{arg_parameter.gpu}')
+            print("Use GPU: {} for training".format(arg_parameter.gpu))
     else:
         device = torch.device('cpu')
         print('Use CPU')
 
-    if not osp.exists(args.pred_dir):
-        os.makedirs(args.pred_dir)
+    if not osp.exists(arg_Dic.pred_dir):
+        os.makedirs(arg_Dic.pred_dir)
 
-    CityScapes_test_dataset = CityScapesSegValDataset(root_dir=args.root_dir, 
-                                                    input_height=args.input_height, input_width=args.input_width)
+    CityScapes_test_dataset = CityScapesSegValDataset(root_dir=arg_Dic.root_dir, 
+                                                    input_height=arg_Dic.input_height, input_width=arg_Dic.input_width)
     dataloader = DataLoader(CityScapes_test_dataset,
-                            batch_size=args.batch_size,
+                            batch_size=arg_parameter.batch_size,
                             shuffle=True,
                             num_workers=4,
                             pin_memory=True)
@@ -134,13 +109,13 @@ def test():
     model = DenseASPP(model_cfg, n_class, output_stride=8)
 
 
-    model_dir = osp.join(args.save_dir, args.ckpt_name)
+    model_dir = osp.join(arg_Dic.save_dir, arg_Dic.ckpt_name)
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir)
     #모델 구조에 입혀줌
     model.load_state_dict(checkpoint)
     model.eval()
-    model.cuda(args.gpu)
+    model.cuda(arg_parameter.gpu)
 
     with torch.no_grad():
         for step, (sample_image, sample_gt) in enumerate(dataloader):
@@ -206,7 +181,7 @@ def test():
                 plt.axis('off')
 
                 plt.tight_layout(w_pad=1.)
-                plt.savefig(osp.join(args.pred_dir, f'{step}-{num}.png'))
+                plt.savefig(osp.join(arg_Dic.pred_dir, f'{step}-{num}.png'))
                 plt.close()
 
 if __name__ == "__main__":

@@ -2,56 +2,25 @@ import os
 import os.path as osp
 import argparse
 import torch
-import torch.nn.functional as F
-import torchvision.transforms.functional as TF
 import time
-import utility
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from DenseASPP import DenseASPP
 from datetime import timedelta
 from CityScapesSeg_dataloader import CityScapesSeg_dataset
-from utility import colorize
+from utility.colorize import colorize_mask
+import numpy as np
+from PIL import Image
 
-#put a base path below
-base_dir = '/root/seg_DenseASPP'
-parser = argparse.ArgumentParser(description='Simple Semantic Segmentation Train')
+from Argument.Parameter.Train_Parameters import Train_Parameters_args
 
-parser.add_argument('--mode', type=str, help='train or test', default='test')
+from Argument.Directory.Train_Directories import Train_Dics_args
 
-# Directory
-parser.add_argument('--model_name', type=str,   help='Customized DenseASPP', default='conventional_denseASPP')
-parser.add_argument('--root_dir', type=str, help='dataset directory',
-                    default=osp.join(base_dir, 'CityScapesDataset'))
-parser.add_argument('--exp_dir', type=str, help='result save directory',
-                    default=osp.join(base_dir, 'experiments'))
-parser.add_argument('--model_dir', type=str, help='model directory for saving',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models'))
-parser.add_argument('--higher_model_dir', type=str, help='model directory for saving',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_higher_mIoU'))
-parser.add_argument('--bestModel_dir', type=str, help='model directory for saving',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'models_bestModel'))
-parser.add_argument('--log_dir', type=str, help='log directory for tensorboard',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'logs'))
-parser.add_argument('--pred_dir', type=str, help='prediction image directory',
-                    default=osp.join(base_dir, 'experiments', 'conventional_denseASPP', 'prediction'))
+from schedule_learning_rate import schedule_learning_rate
 
+arg_Dic = Train_Dics_args()
 
-# Inference
-parser.add_argument('--ckpt_name', type=str, help='saved weight file name', default='0100.pth')
-
-# Parameter
-parser.add_argument('--input_height', type=int, help='model input height size ', default=256)
-parser.add_argument('--input_width', type=int, help='model input width size ', default=256)
-parser.add_argument('--batch_size', type=int, help='input batch size for training ', default=8)
-# parser.add_argument('--learning_rate', type=int, help='learning rate ', default=1e-3) #0.001
-parser.add_argument('--learning_rate', type=int, help='learning rate ', default=3e-4) #0.0003
-# parser.add_argument('--num_epochs', type=int, help='epoch number for training', default=100)
-parser.add_argument('--num_epochs', type=int, help='epoch number for training', default=80)
-parser.add_argument('--gpu', type=int, help='GPU id to use', default=0)
-
-#args = parser.parse_args()
-args, unknown = parser.parse_known_args()
+arg_parameter = Train_Parameters_args()
 
 model_cfg = {
     'bn_size': 4,
@@ -70,47 +39,47 @@ model_cfg = {
 
 def main():
     # 경로 셋팅
-    if not osp.exists(osp.join(args.exp_dir, args.model_name)):
-        os.makedirs(osp.join(args.exp_dir, args.model_name))
+    if not osp.exists(osp.join(arg_Dic.exp_dir, arg_Dic.model_name)):
+        os.makedirs(osp.join(arg_Dic.exp_dir, arg_Dic.model_name))
 
-    if not osp.exists(args.model_dir):
-        os.makedirs(args.model_dir)
+    if not osp.exists(arg_Dic.model_dir):
+        os.makedirs(arg_Dic.model_dir)
         
-    if not osp.exists(args.log_dir):
-        os.makedirs(args.log_dir)
+    if not osp.exists(arg_Dic.log_dir):
+        os.makedirs(arg_Dic.log_dir)
         
-    if not osp.exists(args.higher_model_dir):
-        os.makedirs(args.higher_model_dir)
+    if not osp.exists(arg_Dic.higher_model_dir):
+        os.makedirs(arg_Dic.higher_model_dir)
         
-    if not osp.exists(args.bestModel_dir):
-        os.makedirs(args.bestModel_dir)
+    if not osp.exists(arg_Dic.bestModel_dir):
+        os.makedirs(arg_Dic.bestModel_dir)
 
     # GPU 셋팅
     if torch.cuda.is_available():
-        if args.gpu is not None:
-            device = torch.device(f'cuda:{args.gpu}')
-            print("Use GPU: {} for training".format(args.gpu))
+        if arg_parameter.gpu is not None:
+            device = torch.device(f'cuda:{arg_parameter.gpu}')
+            print("Use GPU: {} for training".format(arg_parameter.gpu))
     else:
         device = torch.device('cpu')
         print('Use CPU')
 
     # 텐서보드 셋팅
-    writer = SummaryWriter(args.log_dir)
+    writer = SummaryWriter(arg_Dic.log_dir)
 
-    CityScapes_train_dataset = CityScapesSeg_dataset(root_dir=args.root_dir,
-                                    input_height=args.input_height, input_width=args.input_width, dataset = 'train')
+    CityScapes_train_dataset = CityScapesSeg_dataset(root_dir=arg_Dic.root_dir,
+                                    input_height=arg_parameter.input_height, input_width=arg_parameter.input_width, dataset = 'train')
     
     train_dataloader = DataLoader(CityScapes_train_dataset,
-                            batch_size=args.batch_size,
+                            batch_size=arg_parameter.batch_size,
                             shuffle=True,
                             num_workers=4,
                             pin_memory=True)
 
-    CityScapes_val_dataset = CityScapesSeg_dataset(root_dir=args.root_dir,
-                                    input_height=args.input_height, input_width=args.input_width, dataset = 'val')
+    CityScapes_val_dataset = CityScapesSeg_dataset(root_dir=arg_Dic.root_dir,
+                                    input_height=arg_parameter.input_height, input_width=arg_parameter.input_width, dataset = 'val')
 
     val_dataloader = DataLoader(CityScapes_val_dataset,
-                        batch_size=args.batch_size,
+                        batch_size=arg_parameter.batch_size,
                         shuffle=True,
                         num_workers=4,
                         pin_memory=True)
@@ -121,26 +90,27 @@ def main():
     model = model.cuda()
 
     # 최적화
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=arg_parameter.learning_rate, weight_decay=arg_parameter.weight_decay)
     criterion = torch.nn.CrossEntropyLoss(ignore_index=255).cuda()
     
     n_class = 19
-    mIoU_list = []
 
     # 학습
-    for epoch in range(args.num_epochs): #100개의 epochs 모든 input date들이 모델에 학습이 되고 output으로 나오는 시각
+    for epoch in range(arg_parameter.num_epochs): #100개의 epochs 모든 input date들이 모델에 학습이 되고 output으로 나오는 시각
         #시간을 체크해주는 코드
         start = time.time()
         
         iou_per_class = [0.0 for _ in range(n_class)]
         total_per_class = [0 for _ in range(n_class)]
 
+        schedule_learning_rate(epoch, optimizer)
+
         for step, batch_image in enumerate(train_dataloader):
             sample_image = batch_image['image']
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
             
-            # if step > 1: break
+            if step > 1: break
             
             #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
             #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
@@ -188,7 +158,8 @@ def main():
                     iou_per_class[cls] += iou
                     #클래스가 등장한 횟수 더함
                     total_per_class[cls] += 1
-
+        
+        mIoU_list = []
         final_iou_list = []
         for cls in range(n_class):
             if total_per_class[cls] > 0:
@@ -200,17 +171,16 @@ def main():
 
         #한 epoch이 끝나고 나면 시간 출력 
         t_elapsed = timedelta(seconds=time.time() - start)
-        training_time_left = ((args.num_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600)
-        print(f"Name: {args.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{args.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {int(mIoU):d}")
-        torch.save(model.state_dict(), osp.join(args.model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
+        training_time_left = ((arg_parameter.num_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600)
+        print(f"Name: {arg_Dic.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{arg_parameter.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {int(mIoU):d}")
+        torch.save(model.state_dict(), osp.join(arg_Dic.model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
 
-        if len(mIoU_list) >= 2:
-            if mIoU_list[-1] > max(mIoU_list[:-1]):
-                betterIoU = mIoU_list[-1]
-                better_IoU = mIoU_list.index(betterIoU)
-                torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
+        if len(mIoU_list) >= 2 and mIoU_list[-1] > max(mIoU_list[:-1]):
+            betterIoU = mIoU_list[-1]
+            better_IoU = mIoU_list.index(betterIoU)
+            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
         else:
-            torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
+            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
 
         #일 단위
         # training_time_left = ((total_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600*24)
@@ -228,9 +198,20 @@ def main():
         # print(sample_vis_gt.shape)
         writer.add_image('Input/Gt', sample_vis_gt[idx_random], global_step=epoch)
 
-        # print(predicted_class.shape)
-        predicted_class = torch.unsqueeze(predicted_class, dim=1)
-        writer.add_image('Results/trained_result', predicted_class[idx_random], global_step=epoch)
+        # print(type(predicted_class))
+        # predicted_class = predicted_class[idx_random]
+        # predicted_class = torch.unsqueeze(predicted_class, dim=1)
+        # predicted_class = predicted_class.detach().cpu().numpy()
+        # predicted_class = colorize_mask(predicted_class)
+        # predicted_class = np.array(predicted_class)
+        # predicted_class = Image.fromarray(predicted_class)
+        # 예측 클래스에서 하나 선택
+        predicted_class = predicted_class[idx_random] # shape: (H, W)
+        print(type(predicted_class))
+        predicted_class = predicted_class.detach().cpu().numpy()
+        predicted_class = colorize_mask(predicted_class)  # shape: (H, W, 3), dtype: uint8
+        predicted_class = torch.tensor(predicted_class).permute(2, 0, 1)  # (3, H, W)
+        writer.add_image('Results/trained_result', predicted_class, global_step=epoch)
 
         writer.add_scalar('Results/Loss', loss, global_step=epoch)
         writer.add_scalar('Results/Accuracy', mIoU, global_step=epoch)
@@ -238,10 +219,10 @@ def main():
     return model, mIoU_list
 
 def save_best_model(model, mIoU_list):
-    if len(mIoU_list) == args.num_epochs:
+    if len(mIoU_list) == arg_parameter.num_epochs:
         max_IoU = max(mIoU_list)
         best_epoch = mIoU_list.index(max_IoU)
-        torch.save(model.state_dict(), osp.join(args.bestModel_dir, f"{best_epoch}_{int(max_IoU):d}.pth"))
+        torch.save(model.state_dict(), osp.join(arg_Dic.bestModel_dir, f"{best_epoch}_{int(max_IoU):d}.pth"))
 
 if __name__ == "__main__":
     model, mIoU_list = main()
