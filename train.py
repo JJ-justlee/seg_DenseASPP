@@ -14,7 +14,7 @@ from CityScapesSeg_dataloader import CityScapesSeg_dataset
 from utility import colorize
 
 #put a base path below
-base_dir = '/home/seg_DenseASPP'
+base_dir = '/root/seg_DenseASPP'
 parser = argparse.ArgumentParser(description='Simple Semantic Segmentation Train')
 
 parser.add_argument('--mode', type=str, help='train or test', default='test')
@@ -38,7 +38,7 @@ parser.add_argument('--pred_dir', type=str, help='prediction image directory',
 
 
 # Inference
-parser.add_argument('--ckpt_name', type=str, help='saved weight file name', default='0099.pth')
+parser.add_argument('--ckpt_name', type=str, help='saved weight file name', default='0100.pth')
 
 # Parameter
 parser.add_argument('--input_height', type=int, help='model input height size ', default=256)
@@ -140,7 +140,7 @@ def main():
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
             
-            if step > 1: break
+            # if step > 1: break
             
             #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
             #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
@@ -202,14 +202,15 @@ def main():
         t_elapsed = timedelta(seconds=time.time() - start)
         training_time_left = ((args.num_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600)
         print(f"Name: {args.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{args.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {int(mIoU):d}")
-        torch.save(model.state_dict(), osp.join(args.model_dir, f"{epoch:04d}.pth"))
+        torch.save(model.state_dict(), osp.join(args.model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
 
         if len(mIoU_list) >= 2:
             if mIoU_list[-1] > max(mIoU_list[:-1]):
-                better_IoU = mIoU_list.index(mIoU_list[-1])
-                torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"better IoU: {better_IoU:04d}.pth"))
+                betterIoU = mIoU_list[-1]
+                better_IoU = mIoU_list.index(betterIoU)
+                torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
         else:
-            torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch:04d}.pth"))
+            torch.save(model.state_dict(), osp.join(args.higher_model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
 
         #일 단위
         # training_time_left = ((total_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600*24)
@@ -238,8 +239,9 @@ def main():
 
 def save_best_model(model, mIoU_list):
     if len(mIoU_list) == args.num_epochs:
-        best_epoch = mIoU_list.index(max(mIoU_list))
-        torch.save(model.state_dict(), osp.join(args.bestModel_dir, f"best epoch: {best_epoch}.pth"))
+        max_IoU = max(mIoU_list)
+        best_epoch = mIoU_list.index(max_IoU)
+        torch.save(model.state_dict(), osp.join(args.bestModel_dir, f"{best_epoch}_{int(max_IoU):d}.pth"))
 
 if __name__ == "__main__":
     model, mIoU_list = main()

@@ -96,10 +96,9 @@ class CityScapesSeg_dataset(Dataset):
         # aug_image, aug_gt = self.flip(image=aug_image, gt=aug_gt)
 
         aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
-        aug_image = self.random_brightness_jittering(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
-        aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
-        aug_image, aug_gt, aug_vis_gt = self.random_crop(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
-        #crop 전에 filp 먼저 했을 수도 있음. 확인 필요
+        aug_image, aug_gt, aug_vis_gt = self.random_crop(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
 
         aug_image = np.array(aug_image, dtype=np.float32) / 255.0
         aug_gt = np.array(aug_gt, dtype=np.int32)
