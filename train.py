@@ -80,7 +80,7 @@ def main():
 
     val_dataloader = DataLoader(CityScapes_val_dataset,
                         batch_size=arg_parameter.batch_size,
-                        shuffle=True,
+                        shuffle=False,
                         num_workers=4,
                         pin_memory=True)
 
@@ -146,8 +146,8 @@ def main():
                 val_predicted_class = torch.argmax(val_prediction, dim=1)
 
             for cls in range(n_class):
-                pred_cls = (val_predicted_class == cls)
-                gt_cls = (sample_val_gt == cls)
+                pred_cls = (val_predicted_class == cls).bool()
+                gt_cls = (sample_val_gt == cls).bool()
 
                 intersection = (pred_cls & gt_cls).sum().float()
                 union = (pred_cls | gt_cls).sum().float()
@@ -175,10 +175,11 @@ def main():
         print(f"Name: {arg_Dic.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{arg_parameter.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {int(mIoU):d}")
         torch.save(model.state_dict(), osp.join(arg_Dic.model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
 
-        if len(mIoU_list) >= 2 and mIoU_list[-1] > max(mIoU_list[:-1]):
-            betterIoU = mIoU_list[-1]
-            better_IoU = mIoU_list.index(betterIoU)
-            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
+        if len(mIoU_list) >= 2:
+            if mIoU_list[-1] > max(mIoU_list[:-1]):
+                betterIoU = mIoU_list[-1]
+                better_IoU = mIoU_list.index(betterIoU)
+                torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
         else:
             torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
 
@@ -187,27 +188,41 @@ def main():
         # print(f"Training time left: {training_time_left:.2f} days")
         
         # 텐서보드
-        idx_random = torch.randint(0, sample_image.size(0), (1,)).item()
+        # print(sample_image.shape) > (B, C, H, W) > B에서 랜덤으로 하나 뽑아서 idx_random에 넣음
+        idx_random_train = torch.randint(0, sample_image.size(0), (1,)).item()
+        idx_random_val = torch.randint(0, sample_val_image.size(0), (1,)).item()
         # print(idx_random)
-        # print(sample_image.shape)
-        writer.add_image('Input/Image', sample_image[idx_random], global_step=epoch)
+        # print(sample_image.shape) > (C, H, W)
+        writer.add_image('Input/Image', sample_image[idx_random_train], global_step=epoch)
         
         # sample_vis_gt = sample_vis_gt[0] #배치 제거
         # print(sample_vis_gt.shape)
         sample_vis_gt = sample_vis_gt.permute(0, 3, 1, 2) #(B, H, W, C) > (B, C, H, W)
         # print(sample_vis_gt.shape)
-        writer.add_image('Input/Gt', sample_vis_gt[idx_random], global_step=epoch)
+        writer.add_image('Input/Gt', sample_vis_gt[idx_random_train], global_step=epoch)
 
         # 예측 클래스에서 하나 선택
-        predicted_class = predicted_class[idx_random] # shape: (H, W)
-        print(type(predicted_class))
+        predicted_class = predicted_class[idx_random_train] # shape: (H, W)
+        # print(type(predicted_class))
         predicted_class = predicted_class.detach().cpu().numpy()
         predicted_class = colorize_mask(predicted_class)  # shape: (H, W, 3), dtype: uint8
-        predicted_class = torch.tensor(predicted_class).permute(2, 0, 1)  # (3, H, W)
+        predicted_class = torch.tensor(predicted_class, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
         writer.add_image('Results/trained_result', predicted_class, global_step=epoch)
 
-        writer.add_scalar('Results/Loss', loss, global_step=epoch)
-        writer.add_scalar('Results/Accuracy', mIoU, global_step=epoch)
+        sample_val_gt = sample_val_gt[idx_random_val]
+        sample_val_gt = sample_val_gt.detach().cpu().numpy()
+        sample_val_gt = colorize_mask(sample_val_gt)  # shape: (H, W, 3), dtype: uint8
+        sample_val_gt = torch.tensor(sample_val_gt, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
+        writer.add_image('Results/val_data_result', sample_val_gt, global_step=epoch)
+
+        val_predicted_class = val_predicted_class[idx_random_val]
+        val_predicted_class = val_predicted_class.detach().cpu().numpy()
+        val_predicted_class = colorize_mask(val_predicted_class)  # shape: (H, W, 3), dtype: uint8
+        val_predicted_class = torch.tensor(val_predicted_class, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
+        writer.add_image('Results/val_data_result', val_predicted_class, global_step=epoch)
+
+        writer.add_scalar('Evaluation/Loss', loss, global_step=epoch)
+        writer.add_scalar('Evaluation/Accuracy', mIoU, global_step=epoch)
     
     return model, mIoU_list
 

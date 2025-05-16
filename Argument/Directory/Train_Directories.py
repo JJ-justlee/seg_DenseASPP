@@ -3,7 +3,7 @@ import os.path as osp
 
 def Train_Dics_args():
     #put a base path below
-    base_dir = '/root/seg_DenseASPP'
+    base_dir = '/home/seg_DenseASPP'
 
     parser = argparse.ArgumentParser(description='Semantic Segmentation Directories for Train')
 
