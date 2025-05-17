@@ -72,7 +72,7 @@ def main():
     train_dataloader = DataLoader(CityScapes_train_dataset,
                             batch_size=arg_parameter.batch_size,
                             shuffle=True,
-                            num_workers=4,
+                            num_workers=0,
                             pin_memory=True)
 
     CityScapes_val_dataset = CityScapesSeg_dataset(root_dir=arg_Dic.root_dir,
@@ -81,7 +81,7 @@ def main():
     val_dataloader = DataLoader(CityScapes_val_dataset,
                         batch_size=arg_parameter.batch_size,
                         shuffle=False,
-                        num_workers=4,
+                        num_workers=0,
                         pin_memory=True)
 
     # 뉴럴네트워크 로드
@@ -110,7 +110,7 @@ def main():
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
             
-            if step > 1: break
+            # if step > 1: break
             
             #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
             #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
@@ -136,44 +136,56 @@ def main():
             output = torch.softmax(output, dim=1) #(8, 19, 256, 256)
             predicted_class = torch.argmax(output, dim=1)  # 클래스 인덱스 추출 (B, H, W)
 
+            # print(f'Epoch: {epoch:>3d}/{arg_parameter.num_epochs} | step: {step}/{len(train_dataloader)}, loss: {loss:.3f}')
+
+        mIoU_list = []
+        miou_val = 0
+        num_images = 0
         for batch_image in val_dataloader:
             sample_val_image = batch_image['image'].to(device)
             sample_val_gt = batch_image['gt'].to(device)
-
+            sample_val_gt = torch.where(sample_val_gt == 255, -1, sample_val_gt)
+            
             with torch.no_grad():
                 val_logit = model(sample_val_image)
                 val_prediction = torch.softmax(val_logit, dim=1)
                 val_predicted_class = torch.argmax(val_prediction, dim=1)
 
-            for cls in range(n_class):
-                pred_cls = (val_predicted_class == cls).bool()
-                gt_cls = (sample_val_gt == cls).bool()
+            batch_size = sample_val_gt.size(0)
+            for batch_idx in range(batch_size):
+                gt = sample_val_gt[batch_idx]
+                predic_gt = val_predicted_class[batch_idx]
 
-                intersection = (pred_cls & gt_cls).sum().float()
-                union = (pred_cls | gt_cls).sum().float()
+                gt_classes = torch.unique(gt)
+                gt_classes = gt_classes[gt_classes != -1]
 
-                if union > 0:
-                    iou = intersection / union
-                    #클래스에 IoU값을 더함
-                    iou_per_class[cls] += iou
-                    #클래스가 등장한 횟수 더함
-                    total_per_class[cls] += 1
-        
-        mIoU_list = []
-        final_iou_list = []
-        for cls in range(n_class):
-            if total_per_class[cls] > 0:
-                final_iou_list.append(iou_per_class[cls] / total_per_class[cls])
+                miou_per_image = 0
+                for gt_class in gt_classes:
+                    binary_pred = (predic_gt == gt_class).bool()
+                    binary_gt = (gt == gt_class).bool()
 
-        mIoU = (sum(final_iou_list) / len(final_iou_list)) * 100
-        mIoU_list.append(mIoU)
+                    intersection = (binary_pred & binary_gt).sum().float()
+                    union = (binary_pred | binary_gt).sum().float()
 
+                    iou_per_class = intersection / (union + 1e-6)
+
+                    miou_per_image += (iou_per_class / len(gt_classes))
+
+                miou_val += miou_per_image
+                num_images += 1
+
+        if num_images > 0:
+            miou_val = (miou_val / num_images) * 100
+        else:
+            miou_val = 0.0
+
+        mIoU_list.append(miou_val)
 
         #한 epoch이 끝나고 나면 시간 출력 
         t_elapsed = timedelta(seconds=time.time() - start)
         training_time_left = ((arg_parameter.num_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600)
-        print(f"Name: {arg_Dic.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{arg_parameter.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {int(mIoU):d}")
-        torch.save(model.state_dict(), osp.join(arg_Dic.model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
+        print(f"Name: {arg_Dic.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{arg_parameter.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {miou_val:.2f}")
+        torch.save(model.state_dict(), osp.join(arg_Dic.model_dir, f"{epoch + 1:04d}_{int(miou_val):d}.pth"))
 
         if len(mIoU_list) >= 2:
             if mIoU_list[-1] > max(mIoU_list[:-1]):
@@ -181,7 +193,7 @@ def main():
                 better_IoU = mIoU_list.index(betterIoU)
                 torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
         else:
-            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
+            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{epoch + 1:04d}_{int(miou_val):d}.pth"))
 
         #일 단위
         # training_time_left = ((total_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600*24)
@@ -193,36 +205,37 @@ def main():
         idx_random_val = torch.randint(0, sample_val_image.size(0), (1,)).item()
         # print(idx_random)
         # print(sample_image.shape) > (C, H, W)
-        writer.add_image('Input/Image', sample_image[idx_random_train], global_step=epoch)
+        writer.add_image('Input/train_dataset_Image', sample_image[idx_random_train], global_step=epoch)
         
         # sample_vis_gt = sample_vis_gt[0] #배치 제거
         # print(sample_vis_gt.shape)
         sample_vis_gt = sample_vis_gt.permute(0, 3, 1, 2) #(B, H, W, C) > (B, C, H, W)
         # print(sample_vis_gt.shape)
-        writer.add_image('Input/Gt', sample_vis_gt[idx_random_train], global_step=epoch)
+        writer.add_image('Input/train_dataset_Gt', sample_vis_gt[idx_random_train], global_step=epoch)
 
-        # 예측 클래스에서 하나 선택
-        predicted_class = predicted_class[idx_random_train] # shape: (H, W)
-        # print(type(predicted_class))
-        predicted_class = predicted_class.detach().cpu().numpy()
-        predicted_class = colorize_mask(predicted_class)  # shape: (H, W, 3), dtype: uint8
-        predicted_class = torch.tensor(predicted_class, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
-        writer.add_image('Results/trained_result', predicted_class, global_step=epoch)
+        writer.add_image('Input/val_dataset_Image', sample_val_image[idx_random_val], global_step=epoch)
 
         sample_val_gt = sample_val_gt[idx_random_val]
         sample_val_gt = sample_val_gt.detach().cpu().numpy()
         sample_val_gt = colorize_mask(sample_val_gt)  # shape: (H, W, 3), dtype: uint8
         sample_val_gt = torch.tensor(sample_val_gt, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
-        writer.add_image('Results/val_data_result', sample_val_gt, global_step=epoch)
+        writer.add_image('Input/val_dataset_Gt', sample_val_gt, global_step=epoch)
+
+        # 예측 클래스에서 하나 선택
+        predicted_class = predicted_class[idx_random_train] # shape: (H, W)
+        predicted_class = predicted_class.detach().cpu().numpy()
+        predicted_class = colorize_mask(predicted_class)  # shape: (H, W, 3), dtype: uint8
+        predicted_class = torch.tensor(predicted_class, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
+        writer.add_image('Results/train_predic_result', predicted_class, global_step=epoch)
 
         val_predicted_class = val_predicted_class[idx_random_val]
         val_predicted_class = val_predicted_class.detach().cpu().numpy()
         val_predicted_class = colorize_mask(val_predicted_class)  # shape: (H, W, 3), dtype: uint8
         val_predicted_class = torch.tensor(val_predicted_class, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
-        writer.add_image('Results/val_data_result', val_predicted_class, global_step=epoch)
+        writer.add_image('Results/val_predic_result', val_predicted_class, global_step=epoch)
 
         writer.add_scalar('Evaluation/Loss', loss, global_step=epoch)
-        writer.add_scalar('Evaluation/Accuracy', mIoU, global_step=epoch)
+        writer.add_scalar('Evaluation/Accuracy', miou_val, global_step=epoch)
     
     return model, mIoU_list
 
@@ -234,4 +247,4 @@ def save_best_model(model, mIoU_list):
 
 if __name__ == "__main__":
     model, mIoU_list = main()
-    save_best_model(model, mIoU_list)
+    # save_best_model(model, mIoU_list)

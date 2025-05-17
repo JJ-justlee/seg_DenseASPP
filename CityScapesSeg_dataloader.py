@@ -101,7 +101,7 @@ class CityScapesSeg_dataset(Dataset):
         aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
 
         aug_image = np.array(aug_image, dtype=np.float32) / 255.0
-        aug_gt = np.array(aug_gt, dtype=np.int32)
+        aug_gt = np.array(aug_gt, dtype=np.float32)
         aug_vis_gt = np.array(aug_vis_gt)
 
         if isinstance(aug_image, np.ndarray) and isinstance(aug_gt, np.ndarray) and isinstance(aug_vis_gt, np.ndarray):
@@ -123,7 +123,7 @@ class CityScapesSeg_dataset(Dataset):
     # Random Crop: 512x512
 
     def resize(self, image, gt, size):
-        resized_image = image.resize(size, Image.BICUBIC)
+        resized_image = image.resize(size, Image.BICUBIC) 
 
         if isinstance(gt, np.ndarray):
             gt = Image.fromarray(gt.astype(np.uint8))
