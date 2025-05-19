@@ -72,8 +72,9 @@ def main():
     train_dataloader = DataLoader(CityScapes_train_dataset,
                             batch_size=arg_parameter.batch_size,
                             shuffle=True,
-                            num_workers=0,
-                            pin_memory=True)
+                            num_workers=16,
+                            pin_memory=True,
+                            persistent_workers=True)
 
     CityScapes_val_dataset = CityScapesSeg_dataset(root_dir=arg_Dic.root_dir,
                                     input_height=arg_parameter.input_height, input_width=arg_parameter.input_width, dataset = 'val')
@@ -81,8 +82,9 @@ def main():
     val_dataloader = DataLoader(CityScapes_val_dataset,
                         batch_size=arg_parameter.batch_size,
                         shuffle=False,
-                        num_workers=0,
-                        pin_memory=True)
+                        num_workers=16,
+                        pin_memory=True,
+                        persistent_workers=True)
 
     # 뉴럴네트워크 로드
     #model = models.segmentation.fcn_resnet50(weights_backbone=True, num_classes=1)
@@ -94,6 +96,7 @@ def main():
     criterion = torch.nn.CrossEntropyLoss(ignore_index=255).cuda()
     
     n_class = 19
+    mIoU_list = []
 
     # 학습
     for epoch in range(arg_parameter.num_epochs): #100개의 epochs 모든 input date들이 모델에 학습이 되고 output으로 나오는 시각
@@ -138,54 +141,42 @@ def main():
 
             # print(f'Epoch: {epoch:>3d}/{arg_parameter.num_epochs} | step: {step}/{len(train_dataloader)}, loss: {loss:.3f}')
 
-        mIoU_list = []
-        miou_val = 0
-        num_images = 0
         for batch_image in val_dataloader:
             sample_val_image = batch_image['image'].to(device)
             sample_val_gt = batch_image['gt'].to(device)
-            sample_val_gt = torch.where(sample_val_gt == 255, -1, sample_val_gt)
-            
+
             with torch.no_grad():
                 val_logit = model(sample_val_image)
                 val_prediction = torch.softmax(val_logit, dim=1)
                 val_predicted_class = torch.argmax(val_prediction, dim=1)
 
-            batch_size = sample_val_gt.size(0)
-            for batch_idx in range(batch_size):
-                gt = sample_val_gt[batch_idx]
-                predic_gt = val_predicted_class[batch_idx]
+            for cls in range(n_class):
+                pred_cls = (val_predicted_class == cls).bool()
+                gt_cls = (sample_val_gt == cls).bool()
 
-                gt_classes = torch.unique(gt)
-                gt_classes = gt_classes[gt_classes != -1]
+                intersection = (pred_cls & gt_cls).sum().float()
+                union = (pred_cls | gt_cls).sum().float()
 
-                miou_per_image = 0
-                for gt_class in gt_classes:
-                    binary_pred = (predic_gt == gt_class).bool()
-                    binary_gt = (gt == gt_class).bool()
+                if gt_cls.long().sum().item() != 0:
+                    iou = intersection / union
+                    #클래스에 IoU값을 더함
+                    iou_per_class[cls] += iou
+                    #클래스가 등장한 횟수 더함
+                    total_per_class[cls] += 1
 
-                    intersection = (binary_pred & binary_gt).sum().float()
-                    union = (binary_pred | binary_gt).sum().float()
+        final_iou_list = []
+        for cls in range(n_class):
+            if total_per_class[cls] > 0:
+                final_iou_list.append(iou_per_class[cls] / total_per_class[cls])
 
-                    iou_per_class = intersection / (union + 1e-6)
-
-                    miou_per_image += (iou_per_class / len(gt_classes))
-
-                miou_val += miou_per_image
-                num_images += 1
-
-        if num_images > 0:
-            miou_val = (miou_val / num_images) * 100
-        else:
-            miou_val = 0.0
-
-        mIoU_list.append(miou_val)
+        mIoU = (sum(final_iou_list) / len(final_iou_list)) * 100
+        mIoU_list.append(mIoU)
 
         #한 epoch이 끝나고 나면 시간 출력 
         t_elapsed = timedelta(seconds=time.time() - start)
         training_time_left = ((arg_parameter.num_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600)
-        print(f"Name: {arg_Dic.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{arg_parameter.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {miou_val:.2f}")
-        torch.save(model.state_dict(), osp.join(arg_Dic.model_dir, f"{epoch + 1:04d}_{int(miou_val):d}.pth"))
+        print(f"Name: {arg_Dic.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{arg_parameter.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {mIoU:.2f}")
+        torch.save(model.state_dict(), osp.join(arg_Dic.model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
 
         if len(mIoU_list) >= 2:
             if mIoU_list[-1] > max(mIoU_list[:-1]):
@@ -193,7 +184,7 @@ def main():
                 better_IoU = mIoU_list.index(betterIoU)
                 torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
         else:
-            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{epoch + 1:04d}_{int(miou_val):d}.pth"))
+            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
 
         #일 단위
         # training_time_left = ((total_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600*24)
@@ -235,16 +226,17 @@ def main():
         writer.add_image('Results/val_predic_result', val_predicted_class, global_step=epoch)
 
         writer.add_scalar('Evaluation/Loss', loss, global_step=epoch)
-        writer.add_scalar('Evaluation/Accuracy', miou_val, global_step=epoch)
+        writer.add_scalar('Evaluation/Accuracy', mIoU, global_step=epoch)
     
     return model, mIoU_list
 
 def save_best_model(model, mIoU_list):
-    if len(mIoU_list) == arg_parameter.num_epochs:
-        max_IoU = max(mIoU_list)
-        best_epoch = mIoU_list.index(max_IoU)
-        torch.save(model.state_dict(), osp.join(arg_Dic.bestModel_dir, f"{best_epoch}_{int(max_IoU):d}.pth"))
+    if len(mIoU_list) >= 2:
+        if mIoU_list[-1] > max(mIoU_list[:-1]):
+            betterIoU = mIoU_list[-1]
+            better_IoU = mIoU_list.index(betterIoU)
+            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
 
 if __name__ == "__main__":
     model, mIoU_list = main()
-    # save_best_model(model, mIoU_list)
+    save_best_model(model, mIoU_list)
