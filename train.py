@@ -11,6 +11,7 @@ from CityScapesSeg_dataloader import CityScapesSeg_dataset
 from utility.colorize import colorize_mask
 import numpy as np
 from PIL import Image
+import multiprocessing
 
 from Argument.Parameter.Train_Parameters import Train_Parameters_args
 
@@ -34,8 +35,21 @@ model_cfg = {
     'd_feature0': 128,
     'd_feature1': 64,
 
-    'pretrained_path': "./pretrained/densenet121.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121-a639ec97.pth"
     }
+
+def load_partial_pretrained_weights(model, pretrained_path):
+    print(f"Loading partial pretrained weights from: {pretrained_path}")
+    pretrained_dict = torch.load(pretrained_path)
+    model_dict = model.state_dict()
+
+    filtered_dict = {k: v for k, v in pretrained_dict.items()
+                     if k in model_dict and v.shape == model_dict[k].shape}
+
+    print(f"Loaded {len(filtered_dict)} layers from pretrained model.")
+    model_dict.update(filtered_dict)
+    model.load_state_dict(model_dict)
+    return model
 
 def main():
     # 경로 셋팅
@@ -72,7 +86,7 @@ def main():
     train_dataloader = DataLoader(CityScapes_train_dataset,
                             batch_size=arg_parameter.batch_size,
                             shuffle=True,
-                            num_workers=16,
+                            num_workers=multiprocessing.cpu_count() // 2,
                             pin_memory=True,
                             persistent_workers=True)
 
@@ -82,13 +96,14 @@ def main():
     val_dataloader = DataLoader(CityScapes_val_dataset,
                         batch_size=arg_parameter.batch_size,
                         shuffle=False,
-                        num_workers=16,
+                        num_workers=multiprocessing.cpu_count() // 2,
                         pin_memory=True,
                         persistent_workers=True)
 
     # 뉴럴네트워크 로드
     #model = models.segmentation.fcn_resnet50(weights_backbone=True, num_classes=1)
     model = DenseASPP(model_cfg, n_class=19, output_stride=8)
+    model = load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'])
     model = model.cuda()
 
     # 최적화
@@ -127,7 +142,7 @@ def main():
             sample_gt = sample_gt.to(device)
 
             sample_gt = sample_gt.long()
-            sample_gt = sample_gt.squeeze()
+            sample_gt = sample_gt.squeeze(1)
             output = model(sample_image) #  (B, 19, H, W) -> (B, H, W)
             # 0번째 인덱스: Road
             # 1번째 인덱스: Person
@@ -232,10 +247,9 @@ def main():
 
 def save_best_model(model, mIoU_list):
     if len(mIoU_list) >= 2:
-        if mIoU_list[-1] > max(mIoU_list[:-1]):
-            betterIoU = mIoU_list[-1]
-            better_IoU = mIoU_list.index(betterIoU)
-            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
+        maxIoU = max(mIoU_list[:-1])
+        max_IoU = mIoU_list.index(maxIoU)
+        torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{max_IoU + 1:04d}_{int(maxIoU):d}.pth"))
 
 if __name__ == "__main__":
     model, mIoU_list = main()
