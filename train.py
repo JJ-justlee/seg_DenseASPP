@@ -5,13 +5,15 @@ import torch
 import time
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from DenseASPP import DenseASPP
+from Architectures.DenseASPP import DenseASPP
+from Architectures.MobileNetDenseASPP import MobileNetDenseASPP
 from datetime import timedelta
 from CityScapesSeg_dataloader import CityScapesSeg_dataset
 from utility.colorize import colorize_mask
 import numpy as np
 from PIL import Image
 import multiprocessing
+from ptflops import get_model_complexity_info #flops 측정
 
 from Argument.Parameter.Train_Parameters import Train_Parameters_args
 
@@ -37,6 +39,24 @@ model_cfg = {
 
     'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121-a639ec97.pth"
     }
+
+def check_FLOPs_and_Parameters(model):
+    model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
+    model.eval()
+
+    with torch.cuda.device(0):
+        macs, params = get_model_complexity_info(model, (3, 512, 512), as_strings=True, verbose=False, print_per_layer_stat=False)
+        print(f'FLOPs: {macs}')
+        print(f'Parameters: {params}')
+        
+    save_path = "/home/seg_DenseASPP/Params_and_FLOPs/flops_and_params_MobileNetDenseASPP.txt"
+    with open(save_path, "w") as f:
+        f.write(f"Model: MobileNetDenseASPP\n")
+        f.write(f"Input Size: (3, 512, 512)\n")
+        f.write(f"FLOPs: {macs}\n")
+        f.write(f"Params: {params}\n")
+
+        print(f"FLOPs and Params saved to {save_path}")
 
 def load_partial_pretrained_weights(model, pretrained_path):
     print(f"Loading partial pretrained weights from: {pretrained_path}")
@@ -102,9 +122,11 @@ def main():
 
     # 뉴럴네트워크 로드
     #model = models.segmentation.fcn_resnet50(weights_backbone=True, num_classes=1)
-    model = DenseASPP(model_cfg, n_class=19, output_stride=8)
+    # model = DenseASPP(model_cfg, n_class=19, output_stride=8)
+    model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
     model = load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'])
     model = model.cuda()
+    check_FLOPs_and_Parameters(model)
 
     # 최적화
     optimizer = torch.optim.Adam(model.parameters(), lr=arg_parameter.learning_rate, weight_decay=arg_parameter.weight_decay)
@@ -125,6 +147,7 @@ def main():
 
         for step, batch_image in enumerate(train_dataloader):
             sample_image = batch_image['image']
+            # print(sample_image.shape)
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
             
@@ -249,8 +272,8 @@ def save_best_model(model, mIoU_list):
     if len(mIoU_list) >= 2:
         maxIoU = max(mIoU_list[:-1])
         max_IoU = mIoU_list.index(maxIoU)
-        torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{max_IoU + 1:04d}_{int(maxIoU):d}.pth"))
+        torch.save(model.state_dict(), osp.join(arg_Dic.bestModel_dir, f"{max_IoU + 1:04d}_{int(maxIoU):d}.pth"))
 
-if __name__ == "__main__":
+if __name__ == "__main__":   
     model, mIoU_list = main()
     save_best_model(model, mIoU_list)

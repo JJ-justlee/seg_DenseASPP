@@ -9,7 +9,7 @@ import cv2
 import utility
 
 from torch.utils.data import DataLoader
-from DenseASPP import DenseASPP
+from Architectures.DenseASPP import DenseASPP
 from val_data_loader import CityScapesSegValDataset
 
 from PIL import Image
