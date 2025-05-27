@@ -41,11 +41,10 @@ model_cfg = {
     }
 
 def check_FLOPs_and_Parameters(model):
-    model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
     model.eval()
-
     with torch.cuda.device(0):
         macs, params = get_model_complexity_info(model, (3, 512, 512), as_strings=True, verbose=False, print_per_layer_stat=False)
+        
         print(f'FLOPs: {macs}')
         print(f'Parameters: {params}')
         
@@ -56,7 +55,7 @@ def check_FLOPs_and_Parameters(model):
         f.write(f"FLOPs: {macs}\n")
         f.write(f"Params: {params}\n")
 
-        print(f"FLOPs and Params saved to {save_path}")
+    print(f"FLOPs and Params saved to {save_path}")
 
 def load_partial_pretrained_weights(model, pretrained_path):
     print(f"Loading partial pretrained weights from: {pretrained_path}")
@@ -139,6 +138,7 @@ def main():
     for epoch in range(arg_parameter.num_epochs): #100개의 epochs 모든 input date들이 모델에 학습이 되고 output으로 나오는 시각
         #시간을 체크해주는 코드
         start = time.time()
+        model.train()
         
         iou_per_class = [0.0 for _ in range(n_class)]
         total_per_class = [0 for _ in range(n_class)]
@@ -183,6 +183,7 @@ def main():
             sample_val_image = batch_image['image'].to(device)
             sample_val_gt = batch_image['gt'].to(device)
 
+            model.eval()
             with torch.no_grad():
                 val_logit = model(sample_val_image)
                 val_prediction = torch.softmax(val_logit, dim=1)
@@ -270,7 +271,7 @@ def main():
 
 def save_best_model(model, mIoU_list):
     if len(mIoU_list) >= 2:
-        maxIoU = max(mIoU_list[:-1])
+        maxIoU = max(mIoU_list)
         max_IoU = mIoU_list.index(maxIoU)
         torch.save(model.state_dict(), osp.join(arg_Dic.bestModel_dir, f"{max_IoU + 1:04d}_{int(maxIoU):d}.pth"))
 
