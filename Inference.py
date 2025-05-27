@@ -7,9 +7,12 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import cv2
 import utility
+import multiprocessing
 
 from torch.utils.data import DataLoader
-from Architectures.DenseASPP import DenseASPP
+# from Architectures.DenseASPP import DenseASPP
+from Architectures.MobileNetDenseASPP import MobileNetDenseASPP
+from utility.colorize import colorize_mask
 from val_data_loader import CityScapesSegValDataset
 
 from PIL import Image
@@ -80,13 +83,15 @@ def test():
     if not osp.exists(arg_Dic.pred_dir):
         os.makedirs(arg_Dic.pred_dir)
 
-    CityScapes_test_dataset = CityScapesSegValDataset(root_dir=arg_Dic.root_dir, 
-                                                    input_height=arg_Dic.input_height, input_width=arg_Dic.input_width)
-    dataloader = DataLoader(CityScapes_test_dataset,
-                            batch_size=arg_parameter.batch_size,
-                            shuffle=True,
-                            num_workers=4,
-                            pin_memory=True)
+    CityScapes_val_dataset = CityScapesSegValDataset(root_dir=arg_Dic.root_dir,
+                                    input_height=arg_parameter.input_height, input_width=arg_parameter.input_width)
+
+    val_dataloader = DataLoader(CityScapes_val_dataset,
+                        batch_size=arg_parameter.batch_size,
+                        shuffle=False,
+                        num_workers=multiprocessing.cpu_count() // 2,
+                        pin_memory=True,
+                        persistent_workers=True)
     
     model_cfg = {
     'bn_size': 4,
@@ -100,28 +105,31 @@ def test():
     'd_feature0': 128,
     'd_feature1': 64,
 
-    'pretrained_path': "./pretrained/densenet121.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121-a639ec97.pth"
     }
+
+    model_dir = osp.join(arg_Dic.bestModel_dir, '0117_39.pth')
+    #model_dir을 파이썬 객체로 복원
+    checkpoint = torch.load(model_dir, map_location='cpu')
 
     # 학습된 모델 불러오기
     #model = models.segmentation.fcn_resnet50(num_classes=1)
     n_class = 19
-    model = DenseASPP(model_cfg, n_class, output_stride=8)
-
-
-    model_dir = osp.join(arg_Dic.save_dir, arg_Dic.ckpt_name)
-    #model_dir을 파이썬 객체로 복원
-    checkpoint = torch.load(model_dir)
+    # model = DenseASPP(model_cfg, n_class, output_stride=8)
+    model = MobileNetDenseASPP(model_cfg, n_class, output_stride=8)
+    
     #모델 구조에 입혀줌
     model.load_state_dict(checkpoint)
+    model = model.to(device)
     model.eval()
-    model.cuda(arg_parameter.gpu)
 
     with torch.no_grad():
-        for step, (sample_image, sample_gt) in enumerate(dataloader):
+        for step, (sample_image, sample_gt) in enumerate(val_dataloader):
 
-            sample_image = torch.tensor(sample_image, device=device, dtype=torch.float32)
-            sample_gt = torch.tensor(sample_gt, device=device, dtype=torch.float32)
+            # sample_image = torch.tensor(sample_image, device=device, dtype=torch.float32)
+            # sample_gt = torch.tensor(sample_gt, device=device, dtype=torch.float32)
+            sample_image = sample_image.to(device, dtype=torch.float32)
+            sample_gt = sample_gt.to(device, dtype=torch.long)
             sample_gt = torch.unsqueeze(sample_gt, dim=1)
 
             prediction = model(sample_image)
@@ -130,16 +138,16 @@ def test():
             prediction_class = torch.argmax(prediction, dim=1)   
 
             #to make images bigger
-            sample_image = restore_original_size(sample_image)
-            sample_gt = restore_original_size(sample_gt)
-            prediction = restore_original_size(prediction_class)
+            sample_image_resized = restore_original_size(sample_image)
+            sample_gt_resized = restore_original_size(sample_gt)
+            prediction_resized = restore_original_size(prediction_class)
 
             #do not need to use detach function in sapcific python version
             # segmentation 결과 (array)
+            sample_image_cpu = sample_image_resized.cpu().detach().numpy()
+            sample_gt_cpu = sample_gt_resized.cpu().detach().numpy()
             # 변수 prediction_cpu가 모델의 최종 결과.
-            prediction_cpu = prediction.cpu().detach().numpy()
-            sample_image_cpu = sample_image.cpu().detach().numpy()
-            sample_gt_cpu = sample_gt.cpu().detach().numpy()
+            prediction_cpu = prediction_resized.cpu().detach().numpy()
 
             # 그림으로 그리기
             for num, (sp_image, sp_gt, sp_pred) in enumerate(zip(sample_image_cpu, sample_gt_cpu, prediction_cpu)):
@@ -147,8 +155,8 @@ def test():
                 sp_gt = np.transpose(sp_gt, (1, 2, 0))
                 sp_pred = np.transpose(sp_pred, (1, 2, 0))
                 
-                gt_color = utility.colorize_mask(np.squeeze(sp_gt))
-                pred_color = utility.colorize_mask(np.squeeze(sp_pred))
+                gt_color = colorize_mask(np.squeeze(sp_gt))
+                pred_color = colorize_mask(np.squeeze(sp_pred))
 
                 plt.subplot(1, 3, 1)
                 plt.imshow(sp_image)
@@ -160,27 +168,38 @@ def test():
                 plt.title('gt')
                 plt.axis('off')
 
+                sp_gt_tensor = torch.tensor(np.squeeze(sp_gt)).to(device=device, dtype=torch.long)
+                sp_pred_tensor = torch.tensor(np.squeeze(sp_pred)).to(device=device, dtype=torch.long)
+            
+                # ignore label 처리
+                sp_gt_tensor = torch.where(sp_gt_tensor == 255, -1, sp_gt_tensor)
+                gt_classes = torch.unique(sp_gt_tensor)
+                gt_classes = gt_classes[gt_classes != -1]
+                
                 #시간복잡도(O(n))
-                #it can be going down by using numpy 
-                ious = []
-                for cls in range(n_class):
-                    pred_inds = (prediction == cls)
-                    gt_inds = (sample_gt == cls)
-                    intersection = (pred_inds & gt_inds).sum().item()
-                    union = (pred_inds | gt_inds).sum().item()
-                    #ious.append(intersection + 1e-10 / union + 1e-10)
-                    if union == 0:
-                        continue
-                    ious.append(intersection / union)
+                #it can be going down by using numpy
+                IoU_list = []
+                
+                for gt_class in gt_classes:
+                    pred_cls = (sp_pred_tensor == gt_class).bool()
+                    gt_cls = (sp_gt_tensor == gt_class).bool()
 
-                IoU = (sum(ious) / len(ious)) * 100
+                    intersection = (pred_cls & gt_cls).sum().float()
+                    union = (pred_cls | gt_cls).sum().float()
+
+                    IoU_per_image = intersection / (union + 1e-6)    
+
+                    IoU_list.append(IoU_per_image)
+
+                mIoU_per_image = (sum(IoU_list) / len(IoU_list))
+                mIoU_per_image = mIoU_per_image * 100
 
                 plt.subplot(1, 3, 3)
                 plt.imshow(pred_color)
-                plt.title('prediction(IoU: {:.4f}%)'.format(IoU))
+                plt.title(f'prediction(IoU: {mIoU_per_image:.4f}%)')
                 plt.axis('off')
 
-                plt.tight_layout(w_pad=1.)
+                plt.tight_layout(w_pad=1.0)
                 plt.savefig(osp.join(arg_Dic.pred_dir, f'{step}-{num}.png'))
                 plt.close()
 

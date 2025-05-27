@@ -1,58 +1,60 @@
 import os
-import random
+import os.path as osp
 import numpy as np
 import torch
-import torch.nn.functional as F
-import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
-import matplotlib.cm as cm
 
 class CityScapesSegValDataset(Dataset):
   def __init__(self, root_dir, input_height, input_width):
-    gt_test_path = os.path.join(root_dir, 'gtFine_trainvaltest', 'gtFine', 'save_val_mapped')
-    # gt_train_path = os.path.join(root_dir, 'gtFine_trainvaltest', 'gtFine', 'train')
-
-    self.image_filenames = []
-    self.mask_filenames = []
-
-    for city_name in os.listdir(gt_test_path):
-        city_path = os.path.join(gt_test_path, city_name)
-        if os.path.isdir(city_path):
-            for labelvalIds in os.listdir(city_path):
-              labelvalIds_path = os.path.join(city_path, labelvalIds)
-              # if labelvalIds.endswith('labelvalIds.png'):
-              if labelvalIds.endswith('labelvalIds.png'):
-                self.mask_filenames.append(labelvalIds_path)
-
-    image_train_dir = os.path.join(root_dir, "leftImg8bit_trainvaltest", 'leftImg8bit', 'val')
-
-    for image_dir in os.listdir(image_train_dir):
-        rgbImage_path = os.path.join(image_train_dir, image_dir)
-        if os.path.isdir(rgbImage_path):
-            for image_file in os.listdir(rgbImage_path):
-              image_file_path = os.path.join(rgbImage_path, image_file)
-              if image_file.endswith('leftImg8bit.png'):
-                  self.image_filenames.append(image_file_path)
-
-    self.image_filenames = sorted(self.image_filenames)
-    self.mask_filenames = sorted(self.mask_filenames)
-    self.ids = sorted([os.path.basename(f).split('_leftImg8bit.png')[0] for f in self.image_filenames])
-
     self.input_height = input_height
     self.input_width = input_width
+    
+    self.ignore_label = 255
+    self.id_to_trainid = {-1: self.ignore_label, 0: self.ignore_label, 1: self.ignore_label, 2: self.ignore_label,
+                        3: self.ignore_label, 4: self.ignore_label, 5: self.ignore_label, 6: self.ignore_label,
+                        7: 0, 8: 1, 9: self.ignore_label, 10: self.ignore_label, 11: 2, 12: 3, 13: 4,
+                        14: self.ignore_label, 15: self.ignore_label, 16: self.ignore_label, 17: 5,
+                        18: self.ignore_label, 19: 6, 20: 7, 21: 8, 22: 9, 23: 10, 24: 11, 25: 12,
+                        26: 13, 27: 14, 28: 15, 29: self.ignore_label, 30: self.ignore_label,
+                        31: 16, 32: 17, 33: 18}
+    
+    image_dir = osp.join(root_dir, 'leftImg8bit_trainvaltest', 'leftImg8bit', 'val')
+    gt_dir = osp.join(root_dir, 'gtFine_trainvaltest', 'gtFine', 'val')
+
+    self.gt_list = []
+    self.image_list = []    
+    for folder_name in sorted(os.listdir(image_dir)):
+        for image_name in sorted(os.listdir(osp.join(image_dir, folder_name))):
+            common_name = image_name.split('_leftImg8bit')[0]
+            
+            gt_path = osp.join(gt_dir, folder_name, common_name+'_gtFine_labelIds.png')
+            image_path = osp.join(image_dir, folder_name, image_name)
+
+            self.gt_list.append(gt_path)
+            self.image_list.append(image_path)
+    
 
   def __len__(self):
-    return len(self.ids)
+    return len(self.image_list)
 
   def __getitem__(self, index):
-    img_id   = self.ids[index]
+    image_path = self.image_list[index]
+    gt_path = self.gt_list[index]
+    
+    open_image = Image.open(image_path)
+    open_gt = Image.open(gt_path)
 
-    image = Image.open(self.image_filenames[index])
-    mask = Image.open(self.mask_filenames[index])
+    array_gt = np.array(open_gt)
+    
+    """ -------- Mapping id to train id --------"""
+    gt_mapped = np.full_like(array_gt, self.ignore_label)
+    for k, v in self.id_to_trainid.items():
+        gt_mapped[array_gt == k] = v
+    """----------------------------------------"""
 
-    aug_image, aug_gt = self.resize(image=image, gt=mask, size=(self.input_width, self.input_height))
+    aug_image, aug_gt = self.resize(image=open_image, gt=gt_mapped, size=(self.input_width, self.input_height))
     aug_image         = np.array(aug_image, dtype= np.float32) / 255.
     aug_gt            = np.array(aug_gt,    dtype= np.float32)
 
