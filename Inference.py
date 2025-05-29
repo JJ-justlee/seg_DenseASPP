@@ -10,12 +10,15 @@ import utility
 import multiprocessing
 
 from torch.utils.data import DataLoader
-# from Architectures.DenseASPP import DenseASPP
+from Architectures.DenseASPP import DenseASPP
 from Architectures.MobileNetDenseASPP import MobileNetDenseASPP
 from utility.colorize import colorize_mask
 from val_data_loader import CityScapesSegValDataset
 
 from PIL import Image
+
+IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
+IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
 
 from Argument.Directory.Inference_Directories import Inference_Dics_args
 from Argument.Parameter.Inference_Parameters import  Inference_Parameter_args
@@ -29,6 +32,10 @@ color_map = [(128, 64, 128), (244, 35, 232), (70, 70, 70), (102, 102, 156), (190
              (250, 170, 30), (220, 220, 0), (107, 142, 35), (152, 251, 152), (70, 130, 180), (220, 20, 60),
              (255,  0,  0), (0, 0, 142), (0, 0, 70), (0, 60, 100), (0, 80, 100), (0, 0, 230), (119, 11, 32)]
 
+def denorm(x):                       # x : (C,H,W) tensor on GPU/CPU
+    mean = IMAGENET_MEAN.to(x.device)
+    std  = IMAGENET_STD .to(x.device)
+    return torch.clamp(x * std + mean, 0, 1)
 
 def restore_original_size(result, mode='nearest'):
     # result shape: [N, H, W] → [N, 1, H, W]
@@ -108,15 +115,15 @@ def test():
     'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121-a639ec97.pth"
     }
 
-    model_dir = osp.join(arg_Dic.bestModel_dir, '0117_39.pth')
+    model_dir = osp.join(arg_Dic.bestModel_dir, '0076_66.pth')
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir, map_location='cpu')
 
     # 학습된 모델 불러오기
     #model = models.segmentation.fcn_resnet50(num_classes=1)
     n_class = 19
-    # model = DenseASPP(model_cfg, n_class, output_stride=8)
-    model = MobileNetDenseASPP(model_cfg, n_class, output_stride=8)
+    model = DenseASPP(model_cfg, n_class, output_stride=8)
+    # model = MobileNetDenseASPP(model_cfg, n_class, output_stride=8)
     
     #모델 구조에 입혀줌
     model.load_state_dict(checkpoint)
@@ -139,6 +146,7 @@ def test():
 
             #to make images bigger
             sample_image_resized = restore_original_size(sample_image)
+            sample_image_resized = denorm(sample_image_resized)
             sample_gt_resized = restore_original_size(sample_gt)
             prediction_resized = restore_original_size(prediction_class)
 

@@ -14,6 +14,9 @@ from utility import colorize
 from glob import glob
 
 
+IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
+IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
+
 def get_dataset_pair(directory, mode, kinds_list):
     image_dir = osp.join(directory, 'leftImg8bit_trainvaltest', 'leftImg8bit', mode)
     gt_dir = osp.join(directory, 'gtFine_trainvaltest', 'gtFine', mode)
@@ -106,6 +109,7 @@ class CityScapesSeg_dataset(Dataset):
 
         if isinstance(aug_image, np.ndarray) and isinstance(aug_gt, np.ndarray) and isinstance(aug_vis_gt, np.ndarray):
             tensor_image = torch.from_numpy(aug_image.transpose(2, 0, 1)).float()
+            tensor_image = (tensor_image - IMAGENET_MEAN) / IMAGENET_STD
             tensor_gt = torch.from_numpy(aug_gt).long()
             tensor_vis_gt = torch.from_numpy(aug_vis_gt)
 
@@ -205,19 +209,45 @@ class CityScapesSeg_dataset(Dataset):
 
     #DenseASPP aug
     #512, 512 image patches
-    def random_crop(self, image, gt, vis_gt):
-        i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(512, 512))
+    # def random_crop(self, image, gt, vis_gt):
+    #     i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(512, 512))
 
-        if isinstance(gt, np.ndarray):
-            gt = Image.fromarray(gt)
-        if isinstance(vis_gt, np.ndarray):
-            vis_gt = Image.fromarray(vis_gt)
+    #     if isinstance(gt, np.ndarray):
+    #         gt = Image.fromarray(gt)
+    #     if isinstance(vis_gt, np.ndarray):
+    #         vis_gt = Image.fromarray(vis_gt)
 
-        image = TF.crop(image, i, j, h, w)
-        gt = TF.crop(gt, i, j, h, w)
-        vis_gt = TF.crop(vis_gt, i, j, h, w)
+    #     image = TF.crop(image, i, j, h, w)
+    #     gt = TF.crop(gt, i, j, h, w)
+    #     vis_gt = TF.crop(vis_gt, i, j, h, w)
         
-        return image, gt, vis_gt
+    #     return image, gt, vis_gt
+    
+    def random_crop(self, image, gt, vis_gt,
+                    size=(512, 512), max_tries=10, min_valid=0.5):
+
+        # ── PIL → numpy 변환 (이미 numpy/torch 면 그대로 사용)
+        img_np     = np.array(image)    if isinstance(image,  Image.Image) else image
+        gt_np      = np.array(gt)       if isinstance(gt,     Image.Image) else gt
+        vis_gt_np  = np.array(vis_gt)   if isinstance(vis_gt, Image.Image) else vis_gt
+
+        H, W = gt_np.shape
+        top, left = 0, 0
+        for _ in range(max_tries):
+            top  = np.random.randint(0, H - size[0] + 1)
+            left = np.random.randint(0, W - size[1] + 1)
+
+            crop_gt     = gt_np     [top:top+size[0], left:left+size[1]]
+            crop_vis_gt = vis_gt_np [top:top+size[0], left:left+size[1]]
+            valid_ratio = (crop_gt != 255).mean()
+
+            if valid_ratio > min_valid:
+                crop_img = img_np[top:top+size[0], left:left+size[1]]
+                return crop_img, crop_gt, crop_vis_gt
+
+        # fallback
+        crop_img = img_np[top:top+size[0], left:left+size[1]]
+        return crop_img, crop_gt, crop_vis_gt
 
 
 class ToTensor(object):

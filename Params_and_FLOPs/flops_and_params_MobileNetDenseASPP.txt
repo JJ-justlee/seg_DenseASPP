@@ -1,4 +1,0 @@
-Model: MobileNetDenseASPP
-Input Size: (3, 512, 512)
-FLOPs: 10.78 GMac
-Params: 2.49 M

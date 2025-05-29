@@ -1,19 +1,28 @@
 import os
 import os.path as osp
-import argparse
 import torch
 import time
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from Architectures.DenseASPP import DenseASPP
-from Architectures.MobileNetDenseASPP import MobileNetDenseASPP
 from datetime import timedelta
-from CityScapesSeg_dataloader import CityScapesSeg_dataset
-from utility.colorize import colorize_mask
-import numpy as np
-from PIL import Image
 import multiprocessing
 from ptflops import get_model_complexity_info #flops 측정
+import importlib
+
+from CityScapesSeg_dataloader import CityScapesSeg_dataset
+from utility.colorize import colorize_mask
+
+import Architectures.DenseASPP as DenseASPP_mod
+import Architectures.MobileNetDenseASPP as MobileNetDenseASPP_mod
+
+importlib.reload(DenseASPP_mod)
+importlib.reload(MobileNetDenseASPP_mod)
+
+DenseASPP = DenseASPP_mod.DenseASPP
+MobileNetDenseASPP = MobileNetDenseASPP_mod.MobileNetDenseASPP
+
+IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
+IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
 
 from Argument.Parameter.Train_Parameters import Train_Parameters_args
 
@@ -37,7 +46,7 @@ model_cfg = {
     'd_feature0': 128,
     'd_feature1': 64,
 
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121-a639ec97.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean.pth"
     }
 
 def check_FLOPs_and_Parameters(model):
@@ -47,17 +56,22 @@ def check_FLOPs_and_Parameters(model):
         
         print(f'FLOPs: {macs}')
         print(f'Parameters: {params}')
+    
+    save_path = "/home/seg_DenseASPP/Params_and_FLOPs/DenseASPP_pretrain.txt"
         
-    save_path = "/home/seg_DenseASPP/Params_and_FLOPs/flops_and_params_MobileNetDenseASPP.txt"
-    with open(save_path, "w") as f:
-        f.write(f"Model: MobileNetDenseASPP\n")
-        f.write(f"Input Size: (3, 512, 512)\n")
-        f.write(f"FLOPs: {macs}\n")
-        f.write(f"Params: {params}\n")
+    if os.path.exists(save_path):
+        print(f'FLOPs and prarmeter file already exist at {save_path}')
+        pass
+    else:
+        with open(save_path, "w") as f:
+            f.write(f"Model: DenseASPP_pretrain\n")
+            f.write(f"Input Size: (3, 512, 512)\n")
+            f.write(f"FLOPs: {macs}\n")
+            f.write(f"Params: {params}\n")
 
-    print(f"FLOPs and Params saved to {save_path}")
+        print(f"FLOPs and Params saved to {save_path}")
 
-def load_partial_pretrained_weights(model, pretrained_path):
+def load_partial_pretrained_weights(model, pretrained_path, show_missed=False):
     print(f"Loading partial pretrained weights from: {pretrained_path}")
     pretrained_dict = torch.load(pretrained_path)
     model_dict = model.state_dict()
@@ -65,10 +79,20 @@ def load_partial_pretrained_weights(model, pretrained_path):
     filtered_dict = {k: v for k, v in pretrained_dict.items()
                      if k in model_dict and v.shape == model_dict[k].shape}
 
-    print(f"Loaded {len(filtered_dict)} layers from pretrained model.")
+    print(f'mapped {len(filtered_dict)}/{len(model_dict)} layers')
     model_dict.update(filtered_dict)
     model.load_state_dict(model_dict)
+    
+    # 옵션: 매핑 안 된 첫 20개 키 출력
+    if show_missed:
+        missed = [k for k in pretrained_dict.keys() if k not in filtered_dict]
+        print("매칭 실패 키:", missed[:40])
     return model
+
+def denorm(x):                       # x : (C,H,W) tensor on GPU/CPU
+    mean = IMAGENET_MEAN.to(x.device)
+    std  = IMAGENET_STD .to(x.device)
+    return torch.clamp(x * std + mean, 0, 1)
 
 def main():
     # 경로 셋팅
@@ -121,9 +145,9 @@ def main():
 
     # 뉴럴네트워크 로드
     #model = models.segmentation.fcn_resnet50(weights_backbone=True, num_classes=1)
-    # model = DenseASPP(model_cfg, n_class=19, output_stride=8)
-    model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
-    model = load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'])
+    model = DenseASPP(model_cfg, n_class=19, output_stride=8)
+    load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=False)
+    # model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
     model = model.cuda()
     check_FLOPs_and_Parameters(model)
 
@@ -139,12 +163,18 @@ def main():
         #시간을 체크해주는 코드
         start = time.time()
         model.train()
+
+        lr = schedule_learning_rate(epoch, optimizer)
+        if epoch in [0, 10, 40, 79]:
+            print(f"epoch {epoch:02d}  lr = {lr:.6f}")
+
+        batch_size=arg_parameter.batch_size
+        accum_iter = batch_size * 2
         
-        iou_per_class = [0.0 for _ in range(n_class)]
-        total_per_class = [0 for _ in range(n_class)]
+        optimizer.zero_grad()  
 
-        schedule_learning_rate(epoch, optimizer)
-
+        #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
+        #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
         for step, batch_image in enumerate(train_dataloader):
             sample_image = batch_image['image']
             # print(sample_image.shape)
@@ -153,10 +183,6 @@ def main():
             
             # if step > 1: break
             
-            #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
-            #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
-            optimizer.zero_grad()
-
             #device=device는 텐서가 CPU/GPU에 맞게 자동으로 할당됨
             #(,,C)는 4개의 차원인데 이걸 rank가 4라고 표현을 함 > tensor
             # sample_image = torch.tensor(sample_image, device=device, dtype=torch.float32)
@@ -170,45 +196,41 @@ def main():
             # 0번째 인덱스: Road
             # 1번째 인덱스: Person
             loss = criterion(output, sample_gt)
+            loss = loss / accum_iter
             loss.backward()
 
-            optimizer.step()
+            if (step + 1) % accum_iter == 0:
+                optimizer.step()
+                optimizer.zero_grad()
             
             output = torch.softmax(output, dim=1) #(8, 19, 256, 256)
             predicted_class = torch.argmax(output, dim=1)  # 클래스 인덱스 추출 (B, H, W)
 
             # print(f'Epoch: {epoch:>3d}/{arg_parameter.num_epochs} | step: {step}/{len(train_dataloader)}, loss: {loss:.3f}')
 
-        for batch_image in val_dataloader:
-            sample_val_image = batch_image['image'].to(device)
-            sample_val_gt = batch_image['gt'].to(device)
+        model.eval()
+        inter_total = torch.zeros(n_class, dtype=torch.float64, device=device)   # 교집합 합계
+        union_total = torch.zeros(n_class, dtype=torch.float64, device=device)   # 합집합 합계
 
-            model.eval()
-            with torch.no_grad():
-                val_logit = model(sample_val_image)
-                val_prediction = torch.softmax(val_logit, dim=1)
-                val_predicted_class = torch.argmax(val_prediction, dim=1)
+        with torch.no_grad():
+            for batch in val_dataloader:
+                sample_val_image = batch['image'].to(device)
+                sample_val_gt    = batch['gt'].to(device)          # (B,H,W)  0‥18, 255
 
-            for cls in range(n_class):
-                pred_cls = (val_predicted_class == cls).bool()
-                gt_cls = (sample_val_gt == cls).bool()
+                val_logit   = model(sample_val_image)              # (B,19,H,W)
+                val_predicted_class    = torch.argmax(val_logit, dim=1)       # (B,H,W)
+                valid_pixel  = (sample_val_gt != 255)
+                
+                for cls in range(n_class):
+                    pred_c = (val_predicted_class == cls) & valid_pixel
+                    gt_c   = (sample_val_gt == cls) & valid_pixel
 
-                intersection = (pred_cls & gt_cls).sum().float()
-                union = (pred_cls | gt_cls).sum().float()
+                    inter_total[cls] += (pred_c & gt_c).sum()
+                    union_total[cls] += (pred_c | gt_c).sum()
 
-                if gt_cls.long().sum().item() != 0:
-                    iou = intersection / union
-                    #클래스에 IoU값을 더함
-                    iou_per_class[cls] += iou
-                    #클래스가 등장한 횟수 더함
-                    total_per_class[cls] += 1
-
-        final_iou_list = []
-        for cls in range(n_class):
-            if total_per_class[cls] > 0:
-                final_iou_list.append(iou_per_class[cls] / total_per_class[cls])
-
-        mIoU = (sum(final_iou_list) / len(final_iou_list)) * 100
+        iou_per_class = inter_total / torch.clamp(union_total, min=1)    # 0으로 나눔 방지
+        valid_cls     = union_total > 0                                  # 데이터셋에 존재하는 클래스
+        mIoU          = iou_per_class[valid_cls].mean().item() * 100
         mIoU_list.append(mIoU)
 
         #한 epoch이 끝나고 나면 시간 출력 
@@ -235,7 +257,7 @@ def main():
         idx_random_val = torch.randint(0, sample_val_image.size(0), (1,)).item()
         # print(idx_random)
         # print(sample_image.shape) > (C, H, W)
-        writer.add_image('Input/train_dataset_Image', sample_image[idx_random_train], global_step=epoch)
+        writer.add_image('Input/train_dataset_Image', denorm(sample_image[idx_random_train]), global_step=epoch)
         
         # sample_vis_gt = sample_vis_gt[0] #배치 제거
         # print(sample_vis_gt.shape)
@@ -243,7 +265,7 @@ def main():
         # print(sample_vis_gt.shape)
         writer.add_image('Input/train_dataset_Gt', sample_vis_gt[idx_random_train], global_step=epoch)
 
-        writer.add_image('Input/val_dataset_Image', sample_val_image[idx_random_val], global_step=epoch)
+        writer.add_image('Input/val_dataset_Image', denorm(sample_val_image[idx_random_val]), global_step=epoch)
 
         sample_val_gt = sample_val_gt[idx_random_val]
         sample_val_gt = sample_val_gt.detach().cpu().numpy()

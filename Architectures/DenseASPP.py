@@ -5,6 +5,7 @@ from torch import nn
 from collections import OrderedDict
 from torch.nn import BatchNorm2d as bn
 
+
 class DenseASPP(nn.Module):
     """
     * output_scale can only set as 8 or 16
@@ -103,7 +104,7 @@ class DenseASPP(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_uniform_(m.weight.data)
+                nn.init.kaiming_uniform(m.weight.data)
 
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
@@ -131,20 +132,21 @@ class DenseASPP(nn.Module):
 
         return cls
 
+
 class _DenseAsppBlock(nn.Sequential):
     """ ConvNet block for building DenseASPP. """
 
     def __init__(self, input_num, num1, num2, dilation_rate, drop_out, bn_start=True):
         super(_DenseAsppBlock, self).__init__()
         if bn_start:
-            self.add_module('norm_1', bn(input_num, momentum=0.0003)),
+            self.add_module('norm1', bn(input_num, momentum=0.0003)),
 
-        self.add_module('relu_1', nn.ReLU(inplace=True)),
-        self.add_module('conv_1', nn.Conv2d(in_channels=input_num, out_channels=num1, kernel_size=1)),
+        self.add_module('relu1', nn.ReLU(inplace=True)),
+        self.add_module('conv1', nn.Conv2d(in_channels=input_num, out_channels=num1, kernel_size=1)),
 
-        self.add_module('norm_2', bn(num1, momentum=0.0003)),
-        self.add_module('relu_2', nn.ReLU(inplace=True)),
-        self.add_module('conv_2', nn.Conv2d(in_channels=num1, out_channels=num2, kernel_size=3,
+        self.add_module('norm2', bn(num1, momentum=0.0003)),
+        self.add_module('relu2', nn.ReLU(inplace=True)),
+        self.add_module('conv2', nn.Conv2d(in_channels=num1, out_channels=num2, kernel_size=3,
                                             dilation=dilation_rate, padding=dilation_rate)),
 
         self.drop_rate = drop_out
@@ -157,16 +159,17 @@ class _DenseAsppBlock(nn.Sequential):
 
         return feature
 
+
 class _DenseLayer(nn.Sequential):
     def __init__(self, num_input_features, growth_rate, bn_size, drop_rate, dilation_rate=1):
         super(_DenseLayer, self).__init__()
-        self.add_module('norm_1', bn(num_input_features)),
-        self.add_module('relu_1', nn.ReLU(inplace=True)),
-        self.add_module('conv_1', nn.Conv2d(num_input_features, bn_size *
+        self.add_module('norm1', bn(num_input_features)),
+        self.add_module('relu1', nn.ReLU(inplace=True)),
+        self.add_module('conv1', nn.Conv2d(num_input_features, bn_size *
                         growth_rate, kernel_size=1, stride=1, bias=False)),
-        self.add_module('norm_2', bn(bn_size * growth_rate)),
-        self.add_module('relu_2', nn.ReLU(inplace=True)),
-        self.add_module('conv_2', nn.Conv2d(bn_size * growth_rate, growth_rate,
+        self.add_module('norm2', bn(bn_size * growth_rate)),
+        self.add_module('relu2', nn.ReLU(inplace=True)),
+        self.add_module('conv2', nn.Conv2d(bn_size * growth_rate, growth_rate,
                         kernel_size=3, stride=1, dilation=dilation_rate, padding=dilation_rate, bias=False)),
         self.drop_rate = drop_rate
 
@@ -176,6 +179,7 @@ class _DenseLayer(nn.Sequential):
             new_features = F.dropout(new_features, p=self.drop_rate, training=self.training)
         return torch.cat([x, new_features], 1)
 
+
 class _DenseBlock(nn.Sequential):
     def __init__(self, num_layers, num_input_features, bn_size, growth_rate, drop_rate, dilation_rate=1):
         super(_DenseBlock, self).__init__()
@@ -183,6 +187,7 @@ class _DenseBlock(nn.Sequential):
             layer = _DenseLayer(num_input_features + i * growth_rate, growth_rate,
                                 bn_size, drop_rate, dilation_rate=dilation_rate)
             self.add_module('denselayer%d' % (i + 1), layer)
+
 
 class _Transition(nn.Sequential):
     def __init__(self, num_input_features, num_output_features, stride=2):
@@ -193,20 +198,7 @@ class _Transition(nn.Sequential):
         if stride == 2:
             self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=stride))
 
+
 # if __name__ == "__main__":
-#   model_cfg = {
-#       'bn_size': 4,
-#       'drop_rate': 0,
-#       'growth_rate': 32,
-#       'num_init_features': 64,
-#       'block_config': (6, 12, 24, 16),
-
-#       'dropout0': 0.1,
-#       'dropout1': 0.1,
-#       'd_feature0': 128,
-#       'd_feature1': 64,
-
-#       'pretrained_path': "./pretrained/densenet121.pth"
-#       }
-#   model = DenseASPP(model_cfg, n_class=19, output_stride=8)
-#   print(model)
+#     model = DenseASPP(2)
+#     print(model)

@@ -6,6 +6,9 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
 
+IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
+IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
+
 class CityScapesSegValDataset(Dataset):
   def __init__(self, root_dir, input_height, input_width):
     self.input_height = input_height
@@ -83,6 +86,7 @@ class ToTensor(object):
 
         if isinstance(image, np.ndarray) and isinstance(gt, np.ndarray):
             image = torch.from_numpy(image.transpose(2, 0, 1))
+            image = (image - IMAGENET_MEAN) / IMAGENET_STD
             gt = torch.from_numpy(np.array(gt, dtype=np.int32)).long()
 
             return image, gt

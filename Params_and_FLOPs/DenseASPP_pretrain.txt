@@ -1,0 +1,4 @@
+Model: DenseASPP_pretrain
+Input Size: (3, 512, 512)
+FLOPs: 39.48 GMac
+Params: 8.28 M

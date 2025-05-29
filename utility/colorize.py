@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def colorize_mask(mask):
+def colorize_mask(mask: np.ndarray) -> np.ndarray:
     if len(mask.shape) == 3:
         mask = mask[..., 0]
     
@@ -16,5 +16,7 @@ def colorize_mask(mask):
 
     for trainId, color in enumerate(COLOR_MAP):
         color_mask[mask == trainId] = color
+
+    color_mask[mask == 255] = (0, 0, 0)
 
     return color_mask
