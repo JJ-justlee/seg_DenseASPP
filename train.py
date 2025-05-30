@@ -12,13 +12,16 @@ import importlib
 from CityScapesSeg_dataloader import CityScapesSeg_dataset
 from utility.colorize import colorize_mask
 
+import Architectures.DenseASPP as DenseASPP
 import Architectures.DenseASPP_modified as DenseASPP_modified
 import Architectures.MobileNetDenseASPP as MobileNetDenseASPP
 
+importlib.reload(DenseASPP)
 importlib.reload(DenseASPP_modified)
 importlib.reload(MobileNetDenseASPP)
 
-DenseASPP = DenseASPP_modified.DenseASPP_modified
+DenseASPP = DenseASPP.DenseASPP
+DenseASPP_modified = DenseASPP_modified.DenseASPP_modified
 MobileNetDenseASPP = MobileNetDenseASPP.MobileNetDenseASPP
 
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
@@ -46,7 +49,7 @@ model_cfg = {
     'd_feature0': 128,
     'd_feature1': 64,
 
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean_1024.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/DenseNet121/DenseNet121_Modified/densenet121_clean_1024.pth"
     }
 
 def check_FLOPs_and_Parameters(model):
