@@ -10,7 +10,7 @@ import utility
 import multiprocessing
 
 from torch.utils.data import DataLoader
-from Architectures.DenseASPP import DenseASPP
+from Architectures.DenseASPP_modified import DenseASPP_modified
 from Architectures.MobileNetDenseASPP import MobileNetDenseASPP
 from utility.colorize import colorize_mask
 from val_data_loader import CityScapesSegValDataset
@@ -112,17 +112,17 @@ def test():
     'd_feature0': 128,
     'd_feature1': 64,
 
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean_512.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean.pth"
     }
 
-    model_dir = osp.join(arg_Dic.bestModel_dir, '0080_66.pth')
+    model_dir = osp.join(arg_Dic.bestModel_dir, '0075_69.pth')
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir, map_location='cpu')
 
     # 학습된 모델 불러오기
     #model = models.segmentation.fcn_resnet50(num_classes=1)
     n_class = 19
-    model = DenseASPP(model_cfg, n_class, output_stride=8)
+    model = DenseASPP_modified(model_cfg, n_class, output_stride=8)
     # model = MobileNetDenseASPP(model_cfg, n_class, output_stride=8)
     
     #모델 구조에 입혀줌

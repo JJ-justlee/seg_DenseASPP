@@ -12,14 +12,14 @@ import importlib
 from CityScapesSeg_dataloader import CityScapesSeg_dataset
 from utility.colorize import colorize_mask
 
-import Architectures.DenseASPP as DenseASPP_mod
-import Architectures.MobileNetDenseASPP as MobileNetDenseASPP_mod
+import Architectures.DenseASPP_modified as DenseASPP_modified
+import Architectures.MobileNetDenseASPP as MobileNetDenseASPP
 
-importlib.reload(DenseASPP_mod)
-importlib.reload(MobileNetDenseASPP_mod)
+importlib.reload(DenseASPP_modified)
+importlib.reload(MobileNetDenseASPP)
 
-DenseASPP = DenseASPP_mod.DenseASPP
-MobileNetDenseASPP = MobileNetDenseASPP_mod.MobileNetDenseASPP
+DenseASPP = DenseASPP.DenseASPP
+MobileNetDenseASPP = MobileNetDenseASPP.MobileNetDenseASPP
 
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
 IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
@@ -167,9 +167,6 @@ def main():
         lr = schedule_learning_rate(epoch, optimizer)
         if epoch in [0, 10, 40, 79]:
             print(f"epoch {epoch:02d}  lr = {lr:.6f}")
-
-        batch_size=arg_parameter.batch_size
-        accum_iter = batch_size * 2
         
         optimizer.zero_grad()  
 
@@ -177,11 +174,12 @@ def main():
         #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
         for step, batch_image in enumerate(train_dataloader):
             sample_image = batch_image['image']
-            # print(sample_image.shape)
             sample_gt = batch_image['gt']
             sample_vis_gt = batch_image['vis_gt']
             
             # if step > 1: break
+            
+            optimizer.zero_grad()
             
             #device=device는 텐서가 CPU/GPU에 맞게 자동으로 할당됨
             #(,,C)는 4개의 차원인데 이걸 rank가 4라고 표현을 함 > tensor
@@ -196,12 +194,9 @@ def main():
             # 0번째 인덱스: Road
             # 1번째 인덱스: Person
             loss = criterion(output, sample_gt)
-            loss = loss / accum_iter
             loss.backward()
-
-            if (step + 1) % accum_iter == 0:
-                optimizer.step()
-                optimizer.zero_grad()
+            
+            optimizer.step()
             
             output = torch.softmax(output, dim=1) #(8, 19, 256, 256)
             predicted_class = torch.argmax(output, dim=1)  # 클래스 인덱스 추출 (B, H, W)

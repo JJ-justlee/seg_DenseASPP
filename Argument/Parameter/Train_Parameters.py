@@ -5,7 +5,7 @@ def Train_Parameters_args():
 
     parser.add_argument('--input_height', type=int, help='model input height size ', default=1024)
     parser.add_argument('--input_width', type=int, help='model input width size ', default=2048)
-    parser.add_argument('--batch_size', type=int, help='input batch size for training ', default=2)
+    parser.add_argument('--batch_size', type=int, help='input batch size for training ', default=8)
     # parser.add_argument('--learning_rate', type=int, help='learning rate ', default=1e-3) #0.001
     parser.add_argument('--learning_rate', type=int, help='learning rate ', default=3e-4) #0.0003
     # parser.add_argument('--num_epochs', type=int, help='epoch number for training', default=100)

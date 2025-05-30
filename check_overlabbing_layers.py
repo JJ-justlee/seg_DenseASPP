@@ -1,5 +1,5 @@
 import torch
-from Architectures.DenseASPP import DenseASPP
+from Architectures.DenseASPP_modified import DenseASPP_modified
 from Architectures.MobileNetDenseASPP import MobileNetDenseASPP
 
 def load_partial_pretrained_weights(model, pretrained_path, show_missed=False):
