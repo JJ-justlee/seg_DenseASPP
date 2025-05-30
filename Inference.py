@@ -115,7 +115,7 @@ def test():
     'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean.pth"
     }
 
-    model_dir = osp.join(arg_Dic.bestModel_dir, '0075_69.pth')
+    model_dir = osp.join(arg_Dic.bestModel_dir, '0076_72.pth')
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir, map_location='cpu')
 

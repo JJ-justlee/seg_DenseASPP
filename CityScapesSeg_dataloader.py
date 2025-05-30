@@ -13,7 +13,6 @@ from PIL import Image
 from utility import colorize
 from glob import glob
 
-
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
 IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
 
@@ -98,10 +97,10 @@ class CityScapesSeg_dataset(Dataset):
         # aug_gt            = np.array(aug_gt,    dtype= np.float32)
         # aug_image, aug_gt = self.flip(image=aug_image, gt=aug_gt)
 
-        aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
-        aug_image, aug_gt, aug_vis_gt = self.random_crop(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
         aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
-        aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_crop(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
 
         aug_image = np.array(aug_image, dtype=np.float32) / 255.0
         aug_gt = np.array(aug_gt, dtype=np.float32)

@@ -146,7 +146,7 @@ def main():
     # 뉴럴네트워크 로드
     #model = models.segmentation.fcn_resnet50(weights_backbone=True, num_classes=1)
     model = DenseASPP(model_cfg, n_class=19, output_stride=8)
-    load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=False)
+    model = load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=False)
     # model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
     model = model.cuda()
     check_FLOPs_and_Parameters(model)
