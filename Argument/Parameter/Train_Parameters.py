@@ -3,8 +3,8 @@ import argparse
 def Train_Parameters_args():
     parser = argparse.ArgumentParser(description='Semantic Segmentation parameters for Train')
 
-    parser.add_argument('--input_height', type=int, help='model input height size ', default=769)
-    parser.add_argument('--input_width', type=int, help='model input width size ', default=769)
+    parser.add_argument('--input_height', type=int, help='model input height size ', default=1024)
+    parser.add_argument('--input_width', type=int, help='model input width size ', default=2048)
     parser.add_argument('--batch_size', type=int, help='input batch size for training ', default=2)
     # parser.add_argument('--learning_rate', type=int, help='learning rate ', default=1e-3) #0.001
     parser.add_argument('--learning_rate', type=int, help='learning rate ', default=3e-4) #0.0003

@@ -24,15 +24,15 @@ def debug_key_diff(model, pretrained_path, n=40):
     state = torch.load(pretrained_path, map_location="cpu")
     model_keys = list(model.state_dict().keys())
 
-    # 1) pretrained 키 앞 n개
-    print(f"\n=== pretrained keys 앞 {40}개 ===")
-    for k in list(state.keys())[:n]:
-        print("  ", k)
+    # # 1) pretrained 키 앞 n개
+    # print(f"\n=== pretrained keys 앞 {40}개 ===")
+    # for k in list(state.keys())[:n]:
+    #     print("  ", k)
 
-    # 2) 모델 키 앞 n개
-    print(f"\n=== model keys 앞 {40}개 ===")
-    for k in model_keys[:n]:
-        print("  ", k)
+    # # 2) 모델 키 앞 n개
+    # print(f"\n=== model keys 앞 {40}개 ===")
+    # for k in model_keys[:n]:
+    #     print("  ", k)
 
     # 3) 모델에는 없지만 pretrained에 있는 키 20개
     missing = [k for k in state if k not in model_keys]
@@ -64,28 +64,26 @@ model_cfg = {
     'd_feature0': 128,
     'd_feature1': 64,
 
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean_512.pth"
     }
 
-# if __name__ == "__main__":
-#     model = DenseASPP(model_cfg, n_class=19, output_stride=8)
-#     # print("conv1 out :", model.features.denseblock1.denselayer1.conv1.out_channels)
-#     # print("norm1 dim :", model.features.denseblock1.denselayer1.norm1.num_features)
-#     # print(model.features.transition3.conv.out_channels)   # 1024
-#     # print(model.features.transition4.conv.out_channels)   # 1024
-#     # model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
-#     # features.denseblock3.apply(partial(_conv_dilate, 2))
-#     # features.denseblock4.apply(partial(_conv_dilate, 4))
-#     model = load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=True)
-#     debug_key_diff(model, model_cfg['pretrained_path'])
 if __name__ == "__main__":
     model = DenseASPP(model_cfg, n_class=19, output_stride=8)
+    # print("conv1 out :", model.features.denseblock1.denselayer1.conv1.out_channels)
+    # print("norm1 dim :", model.features.denseblock1.denselayer1.norm1.num_features)
+    # print(model.features.transition3.conv.out_channels)   # 1024
+    # print(model.features.transition4.conv.out_channels)   # 1024
+    # model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
+    model = load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=True)
+    debug_key_diff(model, model_cfg['pretrained_path'])
+# if __name__ == "__main__":
+#     model = DenseASPP(model_cfg, n_class=19, output_stride=8)
 
-    model = model.cuda()
-    model.eval()
+#     model = model.cuda()
+#     model.eval()
 
-    with torch.no_grad():
-        x = torch.randn(1, 3, 1024, 2048).cuda()   # dummy input (H=1024, W=2048)
-        feat = model.features(x)                   # <-- 여기!
+#     with torch.no_grad():
+#         x = torch.randn(1, 3, 1024, 2048).cuda()   # dummy input (H=1024, W=2048)
+#         feat = model.features(x)                   # <-- 여기!
 
-    print("feature map shape :", feat.shape)
+#     print("feature map shape :", feat.shape)

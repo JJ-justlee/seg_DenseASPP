@@ -46,7 +46,7 @@ model_cfg = {
     'd_feature0': 128,
     'd_feature1': 64,
 
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean_512.pth"
     }
 
 def check_FLOPs_and_Parameters(model):

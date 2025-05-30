@@ -178,8 +178,8 @@ class CityScapesSeg_dataset(Dataset):
     #range 0.5, 2
     def random_scaling(self, image, gt, vis_gt):
         scale = random.uniform(0.5, 2.0)
-        height = int(image.height * scale)
-        width = int(image.width * scale)
+        height = int(self.input_height * scale)
+        width = int(self.input_width * scale)
         
         # numpy to PIL
         if isinstance(gt, np.ndarray):
