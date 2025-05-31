@@ -156,7 +156,7 @@ def main():
 
     # 최적화
     optimizer = torch.optim.Adam(model.parameters(), lr=arg_parameter.learning_rate, weight_decay=arg_parameter.weight_decay)
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=255).cuda()
+    criterion = torch.nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1).cuda()
     
     n_class = 19
     mIoU_list = []

@@ -99,6 +99,7 @@ class CityScapesSeg_dataset(Dataset):
 
         aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
         aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        #rotation 추가하기기
         aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
         aug_image, aug_gt, aug_vis_gt = self.random_crop(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
 
@@ -173,6 +174,7 @@ class CityScapesSeg_dataset(Dataset):
 
         return image, gt, vis_gt
 
+    # region - scaling
     #DenseASPP aug
     #range 0.5, 2
     def random_scaling(self, image, gt, vis_gt):
@@ -204,6 +206,9 @@ class CityScapesSeg_dataset(Dataset):
         image_np = np.clip(image_np, 0, 255)
         image = Image.fromarray(image_np.astype(np.uint8))
         
+        # import torchvision
+        # random_crop = torchvision.transforms.RandomCrop(size=(512,512))
+        # cropped_image = random_crop(image)
         return image, gt, vis_gt
 
     #DenseASPP aug

@@ -115,7 +115,7 @@ def test():
     'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean.pth"
     }
 
-    model_dir = osp.join(arg_Dic.bestModel_dir, '0080_70.pth')
+    model_dir = osp.join(arg_Dic.bestModel_dir, '0078_71.pth')
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir, map_location='cpu')
 
@@ -165,7 +165,7 @@ def test():
                 
                 gt_color = colorize_mask(np.squeeze(sp_gt))
                 pred_color = colorize_mask(np.squeeze(sp_pred))
-
+                
                 plt.subplot(1, 3, 1)
                 plt.imshow(sp_image)
                 plt.title('input')
@@ -206,9 +206,11 @@ def test():
                 plt.imshow(pred_color)
                 plt.title(f'prediction(IoU: {mIoU_per_image:.4f}%)')
                 plt.axis('off')
+                plt.tight_layout()
 
-                plt.tight_layout(w_pad=1.0)
-                plt.savefig(osp.join(arg_Dic.pred_dir, f'{step}-{num}.png'))
+                # plt.tight_layout(w_pad=1.0)
+                # plt.savefig(osp.join(arg_Dic.pred_dir, f'{step}-{num}.png'))
+                plt.savefig('./tmp.png')
                 plt.close()
 
 if __name__ == "__main__":
