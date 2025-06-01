@@ -76,7 +76,6 @@ def cover_colormap(image):
     
     return dst
 
-
 def test():
         # GPU 셋팅
     if torch.cuda.is_available():
@@ -115,7 +114,7 @@ def test():
     'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean.pth"
     }
 
-    model_dir = osp.join(arg_Dic.bestModel_dir, '0078_71.pth')
+    model_dir = osp.join(arg_Dic.bestModel_dir, '0076_72.pth')
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir, map_location='cpu')
 
@@ -186,8 +185,8 @@ def test():
                 
                 #시간복잡도(O(n))
                 #it can be going down by using numpy
+                mIoU_list = []
                 IoU_list = []
-                
                 for gt_class in gt_classes:
                     pred_cls = (sp_pred_tensor == gt_class).bool()
                     gt_cls = (sp_gt_tensor == gt_class).bool()
@@ -201,6 +200,7 @@ def test():
 
                 mIoU_per_image = (sum(IoU_list) / len(IoU_list))
                 mIoU_per_image = mIoU_per_image * 100
+                mIoU_list.append(mIoU_per_image)
 
                 plt.subplot(1, 3, 3)
                 plt.imshow(pred_color)
@@ -208,13 +208,23 @@ def test():
                 plt.axis('off')
                 plt.tight_layout()
 
-                # plt.tight_layout(w_pad=1.0)
-                # plt.savefig(osp.join(arg_Dic.pred_dir, f'{step}-{num}.png'))
-                plt.savefig('./tmp.png')
+                plt.tight_layout(w_pad=1.0)
+                plt.savefig(osp.join(arg_Dic.pred_dir, f'{step}-{num}.png'))
+                # plt.savefig('./tmp.png')
                 plt.close()
 
+    return mIoU_list
+
+def mean_of_mIoU_per_image(mIoU_list):
+    
+    mean_of_mIoU_per_image = sum(mIoU_list) / len(mIoU_list)
+    print(mean_of_mIoU_per_image)
+
+    return mean_of_mIoU_per_image
+    
 if __name__ == "__main__":
-    test()
+    mIoU_list = test()
+    mean_of_mIoU_per_image(mIoU_list)
 
 
 """

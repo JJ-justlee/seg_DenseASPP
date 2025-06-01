@@ -15,7 +15,7 @@ def Train_Dics_args():
 
     parser.add_argument('--exp_dir', type=str, help='result save directory',
                         default=osp.join(base_dir, 'experiments'))
-    parser.add_argument('--model_name', type=str,   help='Customized DenseASPP', default='test')    
+    parser.add_argument('--model_name', type=str,   help='Customized DenseASPP', default='test_random_crop_torchvision_smoothing_without_rotate')    
 
     args = parser.parse_args()
 

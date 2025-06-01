@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import os.path as osp
 import torchvision.transforms.functional as TF
 import tempfile
+import torchvision
 
 from torch.utils.data import Dataset
 from torchvision import transforms
@@ -99,9 +100,9 @@ class CityScapesSeg_dataset(Dataset):
 
         aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
         aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
-        #rotation 추가하기기
+        # aug_image, aug_gt, aug_vis_gt = self.rotate_image(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt, angle=45)
         aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
-        aug_image, aug_gt, aug_vis_gt = self.random_crop(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_crop_torchvision(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
 
         aug_image = np.array(aug_image, dtype=np.float32) / 255.0
         aug_gt = np.array(aug_gt, dtype=np.float32)
@@ -137,12 +138,19 @@ class CityScapesSeg_dataset(Dataset):
         return resized_image, resized_gt
 
 
-    def rotate_image(self, image, gt, angle):
+    def rotate_image(self, image, gt, vis_gt, angle):
+        
+        if isinstance(gt, np.ndarray):
+            gt = Image.fromarray(gt)
+        if isinstance(vis_gt, np.ndarray):
+            vis_gt = Image.fromarray(vis_gt)
+        
         angle = random.uniform(-angle, angle)
         image = TF.rotate(image, angle)
         gt = TF.rotate(gt, angle)
+        vis_gt = TF.rotate(vis_gt, angle)
 
-        return image, gt
+        return image, gt, vis_gt
 
 
     def flip(self, image, gt):
@@ -206,26 +214,23 @@ class CityScapesSeg_dataset(Dataset):
         image_np = np.clip(image_np, 0, 255)
         image = Image.fromarray(image_np.astype(np.uint8))
         
-        # import torchvision
-        # random_crop = torchvision.transforms.RandomCrop(size=(512,512))
-        # cropped_image = random_crop(image)
         return image, gt, vis_gt
 
     #DenseASPP aug
     #512, 512 image patches
-    # def random_crop(self, image, gt, vis_gt):
-    #     i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(512, 512))
+    def random_crop_torchvision(self, image, gt, vis_gt):
+        i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(512, 512))
 
-    #     if isinstance(gt, np.ndarray):
-    #         gt = Image.fromarray(gt)
-    #     if isinstance(vis_gt, np.ndarray):
-    #         vis_gt = Image.fromarray(vis_gt)
+        if isinstance(gt, np.ndarray):
+            gt = Image.fromarray(gt)
+        if isinstance(vis_gt, np.ndarray):
+            vis_gt = Image.fromarray(vis_gt)
 
-    #     image = TF.crop(image, i, j, h, w)
-    #     gt = TF.crop(gt, i, j, h, w)
-    #     vis_gt = TF.crop(vis_gt, i, j, h, w)
+        image = TF.crop(image, i, j, h, w)
+        gt = TF.crop(gt, i, j, h, w)
+        vis_gt = TF.crop(vis_gt, i, j, h, w)
         
-    #     return image, gt, vis_gt
+        return image, gt, vis_gt
     
     def random_crop(self, image, gt, vis_gt,
                     size=(512, 512), max_tries=10, min_valid=0.5):
@@ -243,7 +248,7 @@ class CityScapesSeg_dataset(Dataset):
 
             crop_gt     = gt_np     [top:top+size[0], left:left+size[1]]
             crop_vis_gt = vis_gt_np [top:top+size[0], left:left+size[1]]
-            valid_ratio = (crop_gt != 255).mean()
+            valid_ratio = (crop_gt != 255).mean() # sum number of pixels without 255 / (height * width)
 
             if valid_ratio > min_valid:
                 crop_img = img_np[top:top+size[0], left:left+size[1]]
