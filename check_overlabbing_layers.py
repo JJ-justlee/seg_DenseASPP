@@ -1,6 +1,17 @@
 import torch
-from Architectures.DenseASPP_modified import DenseASPP_modified
-from Architectures.MobileNetDenseASPP import MobileNetDenseASPP
+import importlib
+
+import Architectures.DenseASPP as DenseASPP
+import Architectures.DenseASPP_modified as DenseASPP_modified
+import Architectures.MobileNetDenseASPP as MobileNetDenseASPP
+
+importlib.reload(DenseASPP)
+importlib.reload(DenseASPP_modified)
+importlib.reload(MobileNetDenseASPP)
+
+DenseASPP = DenseASPP.DenseASPP
+DenseASPP_modified = DenseASPP_modified.DenseASPP_modified
+MobileNetDenseASPP = MobileNetDenseASPP.MobileNetDenseASPP
 
 def load_partial_pretrained_weights(model, pretrained_path, show_missed=False):
     print(f"Loading partial pretrained weights from: {pretrained_path}")
@@ -34,10 +45,10 @@ def debug_key_diff(model, pretrained_path, n=40):
     for k in model_keys[:n]:
         print("  ", k)
 
-    # 3) 모델에는 없지만 pretrained에 있는 키 20개
-    missing = [k for k in state if k not in model_keys]
-    print("\n--- 모델에 없는(pretrained 전용) 키 ---")
-    for k in missing: print("  ", k)
+    # # 3) 모델에는 없지만 pretrained에 있는 키 20개
+    # missing = [k for k in state if k not in model_keys]
+    # print("\n--- 모델에 없는(pretrained 전용) 키 ---")
+    # for k in missing: print("  ", k)
 
     # 4) 이름은 맞지만 shape이 안 맞는 키 10개
     shape_bad = [(k, state[k].shape, model.state_dict()[k].shape)

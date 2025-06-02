@@ -8,14 +8,24 @@ import matplotlib.pyplot as plt
 import cv2
 import utility
 import multiprocessing
-
+import importlib
 from torch.utils.data import DataLoader
-from Architectures.DenseASPP_modified import DenseASPP_modified
-from Architectures.MobileNetDenseASPP import MobileNetDenseASPP
+
 from utility.colorize import colorize_mask
 from val_data_loader import CityScapesSegValDataset
+from train import load_partial_pretrained_weights
 
-from PIL import Image
+import Architectures.DenseASPP as DenseASPP
+import Architectures.DenseASPP_modified as DenseASPP_modified
+import Architectures.MobileNetDenseASPP as MobileNetDenseASPP
+
+importlib.reload(DenseASPP)
+importlib.reload(DenseASPP_modified)
+importlib.reload(MobileNetDenseASPP)
+
+DenseASPP = DenseASPP.DenseASPP
+DenseASPP_modified = DenseASPP_modified.DenseASPP_modified
+MobileNetDenseASPP = MobileNetDenseASPP.MobileNetDenseASPP
 
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
 IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
@@ -111,18 +121,18 @@ def test():
     'd_feature0': 128,
     'd_feature1': 64,
 
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/densenet121_clean.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/MobileNetV2/MobileNetV2_modified/mobilenetV2_pretrained_modified.pth"
     }
 
-    model_dir = osp.join(arg_Dic.bestModel_dir, '0076_72.pth')
+    model_dir = osp.join(arg_Dic.bestModel_dir, '0080_44.pth')
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir, map_location='cpu')
 
     # 학습된 모델 불러오기
     #model = models.segmentation.fcn_resnet50(num_classes=1)
     n_class = 19
-    model = DenseASPP_modified(model_cfg, n_class, output_stride=8)
-    # model = MobileNetDenseASPP(model_cfg, n_class, output_stride=8)
+    model = MobileNetDenseASPP(model_cfg, n_class, output_stride=8)
+    load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=False)
     
     #모델 구조에 입혀줌
     model.load_state_dict(checkpoint)
@@ -164,16 +174,6 @@ def test():
                 
                 gt_color = colorize_mask(np.squeeze(sp_gt))
                 pred_color = colorize_mask(np.squeeze(sp_pred))
-                
-                plt.subplot(1, 3, 1)
-                plt.imshow(sp_image)
-                plt.title('input')
-                plt.axis('off')
-
-                plt.subplot(1, 3, 2)
-                plt.imshow(gt_color)
-                plt.title('gt')
-                plt.axis('off')
 
                 sp_gt_tensor = torch.tensor(np.squeeze(sp_gt)).to(device=device, dtype=torch.long)
                 sp_pred_tensor = torch.tensor(np.squeeze(sp_pred)).to(device=device, dtype=torch.long)
@@ -202,15 +202,45 @@ def test():
                 mIoU_per_image = mIoU_per_image * 100
                 mIoU_list.append(mIoU_per_image)
 
-                plt.subplot(1, 3, 3)
-                plt.imshow(pred_color)
-                plt.title(f'prediction(IoU: {mIoU_per_image:.4f}%)')
-                plt.axis('off')
-                plt.tight_layout()
+                gt_color = cv2.cvtColor(gt_color, cv2.COLOR_RGB2BGR)
+                pred_color = cv2.cvtColor(pred_color, cv2.COLOR_RGB2BGR)
+                sp_image_uint8 = (sp_image * 255).astype(np.uint8) if sp_image.max() <= 1.0 else sp_image.astype(np.uint8)
+                blank = np.ones(shape = (sp_image.shape[0], 30, 3), dtype=np.uint8) * 255
+                concat_images = np.concatenate([sp_image_uint8, blank, gt_color, blank, pred_color], axis=1)
+                
+                padding_height = 50
+                white_padding = np.ones((padding_height, concat_images.shape[1], 3), dtype=np.uint8) * 255
+                final_image = np.concatenate([white_padding, concat_images, white_padding], axis=0)
+                
+                text_for_Image = "Image"
+                text_for_Gt = "Gt"
+                text_for_mIoU = f"IoU: {mIoU_per_image:.2f}%"
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.2
+                thickness = 2
+                color = (0, 0, 0)  # Black
+                
+                sp_w = sp_image.shape[1]
+                blank_w = 30
 
-                plt.tight_layout(w_pad=1.0)
-                plt.savefig(osp.join(arg_Dic.pred_dir, f'{step}-{num}.png'))
-                # plt.savefig('./tmp.png')
+                # 각 텍스트에 대한 위치 계산
+                def center_text(text, x_offset):
+                    (tw, th), _ = cv2.getTextSize(text, font, font_scale, thickness)
+                    x = x_offset + (sp_w - tw) // 2
+                    y = 35
+                    return x, y
+
+                x_img, y_img = center_text("Image", 0)
+                x_gt, y_gt = center_text("Gt", sp_w + blank_w)
+                x_pred, y_pred = center_text(f"IoU: {mIoU_per_image:.2f}%", 2 * (sp_w + blank_w))
+
+                # 텍스트 삽입
+                cv2.putText(final_image, "Image", (x_img, y_img), font, font_scale, color, thickness, lineType=cv2.LINE_AA)
+                cv2.putText(final_image, "Gt", (x_gt, y_gt), font, font_scale, color, thickness, lineType=cv2.LINE_AA)
+                cv2.putText(final_image, f"IoU: {mIoU_per_image:.2f}%", (x_pred, y_pred), font, font_scale, color, thickness, lineType=cv2.LINE_AA)
+                
+                save_path = osp.join(arg_Dic.pred_dir, f'{step}-{num}.png')
+                cv2.imwrite(save_path, final_image)
                 plt.close()
 
     return mIoU_list
@@ -219,8 +249,13 @@ def mean_of_mIoU_per_image(mIoU_list):
     
     mean_of_mIoU_per_image = sum(mIoU_list) / len(mIoU_list)
     print(mean_of_mIoU_per_image)
+    
+    save_path = "/home/seg_DenseASPP/experiments/test_MobileNetDenseASPP/prediction1/mean_of_mIoU_per_image.txt"
 
-    return mean_of_mIoU_per_image
+    with open(save_path, "w") as f:
+        f.write(f"mean_of_mIoU_per_image: {mean_of_mIoU_per_image}\n")
+
+    print(f"mean_of_mIoU_per_image saved to {save_path}")
     
 if __name__ == "__main__":
     mIoU_list = test()
