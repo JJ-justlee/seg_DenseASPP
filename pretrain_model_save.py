@@ -86,8 +86,8 @@ def remove_module_prefix(checkpoint_in: str, checkpoint_out: str | None = None):
 
 
 if __name__ == "__main__":    
-    pretrain_model_path = r'/home/seg_DenseASPP/pretrained/DenseNet161/DenseNet161_modi/DenseNet161_modi.pkl'
-    new_pretrain_model_path = r'/home/seg_DenseASPP/pretrained/DenseNet161/DenseNet161_modi/DenseNet161_modi_no_module.pkl'
+    pretrain_model_path = r'/home/seg_DenseASPP/pretrained/DenseNet161/DenseNet161_ori/densenet161_imagenet_pretrained.pth'
+    new_pretrain_model_path = r'/home/seg_DenseASPP/pretrained/DenseNet161/DenseNet161_modi/DenseNet161_modi.pth'
 
     if os.path.exists(new_pretrain_model_path):
         print(f'The file already exists at the path: {new_pretrain_model_path}')

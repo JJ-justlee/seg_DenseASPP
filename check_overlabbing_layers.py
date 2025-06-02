@@ -66,20 +66,20 @@ def debug_key_diff(model, pretrained_path, n=40):
 model_cfg = {
     'bn_size': 4,
     'drop_rate': 0,
-    'growth_rate': 32,
-    'num_init_features': 64,
-    'block_config': (6, 12, 24, 16),
+    'growth_rate': 48,
+    'num_init_features': 96,
+    'block_config': (6, 12, 36, 24),
 
     'dropout0': 0.1,
     'dropout1': 0.1,
-    'd_feature0': 128,
-    'd_feature1': 64,
+    'd_feature0': 512,
+    'd_feature1': 128,
 
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/MobileNetV2/MobileNetV2_modified/mobilenetV2_pretrained_modified.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/DenseNet161/DenseNet161_ori/densenet161_imagenet_pretrained.pth"
     }
 
 if __name__ == "__main__":
-    model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
+    model = DenseASPP(model_cfg, n_class=19, output_stride=8)
     # print("conv1 out :", model.features.denseblock1.denselayer1.conv1.out_channels)
     # print("norm1 dim :", model.features.denseblock1.denselayer1.norm1.num_features)
     # print(model.features.transition3.conv.out_channels)   # 1024

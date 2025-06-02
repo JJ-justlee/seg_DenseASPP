@@ -110,28 +110,28 @@ def test():
                         persistent_workers=True)
     
     model_cfg = {
-    'bn_size': 4,
-    'drop_rate': 0,
-    'growth_rate': 32,
-    'num_init_features': 64,
-    'block_config': (6, 12, 24, 16),
+        'bn_size': 4,
+        'drop_rate': 0,
+        'growth_rate': 48,
+        'num_init_features': 96,
+        'block_config': (6, 12, 36, 24),
 
-    'dropout0': 0.1,
-    'dropout1': 0.1,
-    'd_feature0': 128,
-    'd_feature1': 64,
+        'dropout0': 0.1,
+        'dropout1': 0.1,
+        'd_feature0': 512,
+        'd_feature1': 128,
 
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/MobileNetV2/MobileNetV2_modified/mobilenetV2_pretrained_modified.pth"
-    }
+        'pretrained_path': "/home/seg_DenseASPP/pretrained/DenseNet161/DenseNet161_ori/densenet161_imagenet_pretrained.pth"
+        }
 
-    model_dir = osp.join(arg_Dic.bestModel_dir, '0080_44.pth')
+    model_dir = osp.join(arg_Dic.bestModel_dir, '')
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir, map_location='cpu')
 
     # 학습된 모델 불러오기
     #model = models.segmentation.fcn_resnet50(num_classes=1)
     n_class = 19
-    model = MobileNetDenseASPP(model_cfg, n_class, output_stride=8)
+    model = DenseASPP(model_cfg, n_class, output_stride=8)
     load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=False)
     
     #모델 구조에 입혀줌
@@ -230,9 +230,9 @@ def test():
                     y = 35
                     return x, y
 
-                x_img, y_img = center_text("Image", 0)
-                x_gt, y_gt = center_text("Gt", sp_w + blank_w)
-                x_pred, y_pred = center_text(f"IoU: {mIoU_per_image:.2f}%", 2 * (sp_w + blank_w))
+                x_img, y_img = center_text(text_for_Image, 0)
+                x_gt, y_gt = center_text(text_for_Gt, sp_w + blank_w)
+                x_pred, y_pred = center_text(text_for_mIoU, 2 * (sp_w + blank_w))
 
                 # 텍스트 삽입
                 cv2.putText(final_image, "Image", (x_img, y_img), font, font_scale, color, thickness, lineType=cv2.LINE_AA)
@@ -250,7 +250,7 @@ def mean_of_mIoU_per_image(mIoU_list):
     mean_of_mIoU_per_image = sum(mIoU_list) / len(mIoU_list)
     print(mean_of_mIoU_per_image)
     
-    save_path = "/home/seg_DenseASPP/experiments/test_MobileNetDenseASPP/prediction1/mean_of_mIoU_per_image.txt"
+    save_path = os.path.join(arg_Dic.pred_dir, 'mean_of_mIoU_per_image.txt')
 
     with open(save_path, "w") as f:
         f.write(f"mean_of_mIoU_per_image: {mean_of_mIoU_per_image}\n")

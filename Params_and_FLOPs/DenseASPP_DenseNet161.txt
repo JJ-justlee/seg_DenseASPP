@@ -1,0 +1,4 @@
+Model: DenseASPP_DenseNet161
+Input Size: (3, 512, 512)
+FLOPs: 157.09 GMac
+Params: 35.4 M

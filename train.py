@@ -40,16 +40,16 @@ arg_parameter = Train_Parameters_args()
 model_cfg = {
     'bn_size': 4,
     'drop_rate': 0,
-    'growth_rate': 32,
-    'num_init_features': 64,
-    'block_config': (6, 12, 24, 16),
+    'growth_rate': 48,
+    'num_init_features': 96,
+    'block_config': (6, 12, 36, 24),
 
     'dropout0': 0.1,
     'dropout1': 0.1,
-    'd_feature0': 128,
-    'd_feature1': 64,
+    'd_feature0': 512,
+    'd_feature1': 128,
 
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/MobileNetV2/MobileNetV2_modified/mobilenetV2_pretrained_modified.pth"
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/DenseNet161/DenseNet161_ori/densenet161_imagenet_pretrained.pth"
     }
 
 def check_FLOPs_and_Parameters(model):
@@ -60,14 +60,14 @@ def check_FLOPs_and_Parameters(model):
         print(f'FLOPs: {macs}')
         print(f'Parameters: {params}')
     
-    save_path = "/home/seg_DenseASPP/Params_and_FLOPs/MobileNetDenseASPP.txt"
+    save_path = "/home/seg_DenseASPP/Params_and_FLOPs/DenseASPP_DenseNet161.txt"
         
     if os.path.exists(save_path):
         print(f'FLOPs and prarmeter file already exist at {save_path}')
         pass
     else:
         with open(save_path, "w") as f:
-            f.write(f"Model: MobileNetDenseASPP\n")
+            f.write(f"Model: DenseASPP_DenseNet161\n")
             f.write(f"Input Size: (3, 512, 512)\n")
             f.write(f"FLOPs: {macs}\n")
             f.write(f"Params: {params}\n")
@@ -148,7 +148,7 @@ def main():
 
     # 뉴럴네트워크 로드
     #model = models.segmentation.fcn_resnet50(weights_backbone=True, num_classes=1)
-    model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
+    model = DenseASPP(model_cfg, n_class=19, output_stride=8)
     model = load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=False)
     # model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
     model = model.cuda()
