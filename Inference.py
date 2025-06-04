@@ -33,6 +33,8 @@ IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
 from Argument.Directory.Inference_Directories import Inference_Dics_args
 from Argument.Parameter.Inference_Parameters import  Inference_Parameter_args
 
+from cfg.DenseNet121 import Model_CFG as model_cfg
+
 arg_Dic = Inference_Dics_args()
 
 arg_parameter = Inference_Parameter_args()
@@ -108,23 +110,8 @@ def test():
                         num_workers=multiprocessing.cpu_count() // 2,
                         pin_memory=True,
                         persistent_workers=True)
-    
-    model_cfg = {
-        'bn_size': 4,
-        'drop_rate': 0,
-        'growth_rate': 48,
-        'num_init_features': 96,
-        'block_config': (6, 12, 36, 24),
 
-        'dropout0': 0.1,
-        'dropout1': 0.1,
-        'd_feature0': 512,
-        'd_feature1': 128,
-
-        'pretrained_path': "/home/seg_DenseASPP/pretrained/DenseNet161/DenseNet161_ori/densenet161_imagenet_pretrained.pth"
-        }
-
-    model_dir = osp.join(arg_Dic.bestModel_dir, '')
+    model_dir = osp.join(arg_Dic.bestModel_dir, '0077_71.pth')
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir, map_location='cpu')
 
@@ -132,7 +119,6 @@ def test():
     #model = models.segmentation.fcn_resnet50(num_classes=1)
     n_class = 19
     model = DenseASPP(model_cfg, n_class, output_stride=8)
-    load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=False)
     
     #모델 구조에 입혀줌
     model.load_state_dict(checkpoint)

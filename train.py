@@ -8,6 +8,8 @@ from datetime import timedelta
 import multiprocessing
 from ptflops import get_model_complexity_info #flops 측정
 import importlib
+import numpy as np
+import random
 
 from CityScapesSeg_dataloader import CityScapesSeg_dataset
 from utility.colorize import colorize_mask
@@ -33,25 +35,13 @@ from Argument.Directory.Train_Directories import Train_Dics_args
 
 from schedule_learning_rate import schedule_learning_rate
 
+from cfg.DenseNet121 import Model_CFG as model_cfg
+
 arg_Dic = Train_Dics_args()
 
 arg_parameter = Train_Parameters_args()
-
-model_cfg = {
-    'bn_size': 4,
-    'drop_rate': 0,
-    'growth_rate': 48,
-    'num_init_features': 96,
-    'block_config': (6, 12, 36, 24),
-
-    'dropout0': 0.1,
-    'dropout1': 0.1,
-    'd_feature0': 512,
-    'd_feature1': 128,
-
-    'pretrained_path': "/home/seg_DenseASPP/pretrained/DenseNet161/DenseNet161_ori/densenet161_imagenet_pretrained.pth"
-    }
-
+  
+  
 def check_FLOPs_and_Parameters(model):
     model.eval()
     with torch.cuda.device(0):
@@ -60,14 +50,14 @@ def check_FLOPs_and_Parameters(model):
         print(f'FLOPs: {macs}')
         print(f'Parameters: {params}')
     
-    save_path = "/home/seg_DenseASPP/Params_and_FLOPs/DenseASPP_DenseNet161.txt"
+    save_path = "/home/seg_DenseASPP/Params_and_FLOPs/DenseASPP_pretrain.txt"
         
     if os.path.exists(save_path):
         print(f'FLOPs and prarmeter file already exist at {save_path}')
         pass
     else:
         with open(save_path, "w") as f:
-            f.write(f"Model: DenseASPP_DenseNet161\n")
+            f.write(f"Model: DenseASPP_pretrain\n")
             f.write(f"Input Size: (3, 512, 512)\n")
             f.write(f"FLOPs: {macs}\n")
             f.write(f"Params: {params}\n")
@@ -97,7 +87,29 @@ def denorm(x):                       # x : (C,H,W) tensor on GPU/CPU
     std  = IMAGENET_STD .to(x.device)
     return torch.clamp(x * std + mean, 0, 1)
 
+def Cross_Entropy_loss(gt, prediction):
+    
+    q = np.exp(gt)
+    q = q/np.expand_dims(np.sum(q, axis=1), axis=1)
+    c_squig = np.where([prediction])
+    Cross_Entropy_loss = -np.log(q[c_squig])
+    print(Cross_Entropy_loss)
+
+def set_seed(seed: int = 42):
+    random.seed(seed)  # Python random seed
+    np.random.seed(seed)  # Numpy random seed
+    torch.manual_seed(seed)  # PyTorch CPU seed
+    torch.cuda.manual_seed(seed)  # GPU seed (if using CUDA)
+    torch.cuda.manual_seed_all(seed)  # Multi-GPU seed
+
+    # CuDNN 설정 (가능한 한 deterministic하게)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    # torch.use_deterministic_algorithms(True)
+
 def main():
+    set_seed()
+    
     # 경로 셋팅
     if not osp.exists(osp.join(arg_Dic.exp_dir, arg_Dic.model_name)):
         os.makedirs(osp.join(arg_Dic.exp_dir, arg_Dic.model_name))
@@ -150,13 +162,12 @@ def main():
     #model = models.segmentation.fcn_resnet50(weights_backbone=True, num_classes=1)
     model = DenseASPP(model_cfg, n_class=19, output_stride=8)
     model = load_partial_pretrained_weights(model, pretrained_path=model_cfg['pretrained_path'], show_missed=False)
-    # model = MobileNetDenseASPP(model_cfg, n_class=19, output_stride=8)
     model = model.cuda()
     check_FLOPs_and_Parameters(model)
 
     # 최적화
     optimizer = torch.optim.Adam(model.parameters(), lr=arg_parameter.learning_rate, weight_decay=arg_parameter.weight_decay)
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=255, label_smoothing=0.1).cuda()
+    criterion = torch.nn.CrossEntropyLoss(ignore_index=255).cuda()
     
     n_class = 19
     mIoU_list = []
@@ -169,16 +180,15 @@ def main():
 
         lr = schedule_learning_rate(epoch, optimizer)
         if epoch in [0, 10, 40, 79]:
-            print(f"epoch {epoch:02d}  lr = {lr:.6f}")
-        
-        optimizer.zero_grad()  
+            print(f"epoch {epoch:02d}  lr = {optimizer.param_groups[0]['lr']:.6f}")
 
         #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
         #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
         for step, batch_image in enumerate(train_dataloader):
+            # print(f"Epoch: {epoch:>3}/{arg_parameter.num_epochs} | step: {step:>3}/{len(train_dataloader)} | lr: {optimizer.param_groups[0]['lr']:.6f}")
             sample_image = batch_image['image']
             sample_gt = batch_image['gt']
-            sample_vis_gt = batch_image['vis_gt']
+            # sample_vis_gt = batch_image['vis_gt']
             
             # if step > 1: break
             
@@ -197,6 +207,7 @@ def main():
             # 0번째 인덱스: Road
             # 1번째 인덱스: Person
             loss = criterion(output, sample_gt)
+            # loss = Cross_Entropy_loss(output, sample_gt)
             loss.backward()
             
             optimizer.step()
@@ -214,6 +225,7 @@ def main():
             for batch in val_dataloader:
                 sample_val_image = batch['image'].to(device)
                 sample_val_gt    = batch['gt'].to(device)          # (B,H,W)  0‥18, 255
+                # sample_val_vis_gt = batch['vis_gt'].to(device)
 
                 val_logit   = model(sample_val_image)              # (B,19,H,W)
                 val_predicted_class    = torch.argmax(val_logit, dim=1)       # (B,H,W)
@@ -255,13 +267,16 @@ def main():
         idx_random_val = torch.randint(0, sample_val_image.size(0), (1,)).item()
         # print(idx_random)
         # print(sample_image.shape) > (C, H, W)
+        
         writer.add_image('Input/train_dataset_Image', denorm(sample_image[idx_random_train]), global_step=epoch)
         
-        # sample_vis_gt = sample_vis_gt[0] #배치 제거
-        # print(sample_vis_gt.shape)
-        sample_vis_gt = sample_vis_gt.permute(0, 3, 1, 2) #(B, H, W, C) > (B, C, H, W)
-        # print(sample_vis_gt.shape)
-        writer.add_image('Input/train_dataset_Gt', sample_vis_gt[idx_random_train], global_step=epoch)
+        # sample_vis_gt = sample_vis_gt.permute(0, 3, 1, 2) #(B, H, W, C) > (B, C, H, W)
+        # writer.add_image('Input/train_dataset_Gt', sample_vis_gt[idx_random_train], global_step=epoch)
+        sample_gt = sample_gt[idx_random_train]
+        sample_gt = sample_gt.detach().cpu().numpy()
+        sample_gt = colorize_mask(sample_gt)  # shape: (H, W, 3), dtype: uint8
+        sample_gt = torch.tensor(sample_gt, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
+        writer.add_image('Input/train_dataset_Gt', sample_gt, global_step=epoch)
 
         writer.add_image('Input/val_dataset_Image', denorm(sample_val_image[idx_random_val]), global_step=epoch)
 
@@ -270,6 +285,7 @@ def main():
         sample_val_gt = colorize_mask(sample_val_gt)  # shape: (H, W, 3), dtype: uint8
         sample_val_gt = torch.tensor(sample_val_gt, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
         writer.add_image('Input/val_dataset_Gt', sample_val_gt, global_step=epoch)
+        # writer.add_image('Input/val_dataset_Gt', sample_val_vis_gt[idx_random_val], global_step=epoch)
 
         # 예측 클래스에서 하나 선택
         predicted_class = predicted_class[idx_random_train] # shape: (H, W)
@@ -286,6 +302,7 @@ def main():
 
         writer.add_scalar('Evaluation/Loss', loss, global_step=epoch)
         writer.add_scalar('Evaluation/Accuracy', mIoU, global_step=epoch)
+        writer.add_scalar('Evaluation/learning rate', optimizer.param_groups[0]['lr'], global_step=epoch)
     
     return model, mIoU_list
 

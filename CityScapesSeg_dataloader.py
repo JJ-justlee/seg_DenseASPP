@@ -7,12 +7,16 @@ import os.path as osp
 import torchvision.transforms.functional as TF
 import tempfile
 import torchvision
-
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
 from utility import colorize
 from glob import glob
+import cv2
+
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+
 
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
 IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
@@ -74,7 +78,7 @@ class CityScapesSeg_dataset(Dataset):
         image_path = self.image_data[index]
         gt_path = self.gt_data[index]
         
-        open_image = Image.open(image_path)
+        open_image = Image.open(image_path).convert("RGB")
         open_gt = Image.open(gt_path)
         
         array_gt = np.array(open_gt)
@@ -85,36 +89,41 @@ class CityScapesSeg_dataset(Dataset):
             gt_mapped[array_gt == k] = v
         """----------------------------------------"""
         
-        vis_gt = colorize.colorize_mask(gt_mapped)
-        # vis_gt = Image.fromarray(vis_gt)
+        # vis_gt = colorize.colorize_mask(gt_mapped)
+
+        self.transform = A.Compose([
+            # Albumentations RandomScale = “1 + scale_limit” 
+            # 배울 그대로 받고 싶으면 Affine이나 RandomResizedCrop 사용해야함
+            A.RandomScale(scale_limit=(-0.5, 1.0), p=1.0),
+            A.RandomCrop(height=512, width=512, p=1.0),
+            A.HorizontalFlip(p=0.5),
+            A.ColorJitter(brightness=0.1, p=1.0),
+            A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ToTensorV2()
+        ])
         
-        # aug_image = self.transform(open_image)
-        # aug_gt = self.transform(gt_mapped)
-        # aug_vis_gt = self.transform(vis_gt)
+        augmented = self.transform(image=np.array(open_image), mask=gt_mapped)
+        image_t = augmented['image']       # Tensor
+        gt_t = augmented['mask'].long()  # Tensor (segmentation label)
+
+        sample = {'image': image_t, 'gt': gt_t}
+
+        # aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
+        # aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        # aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        # aug_image, aug_gt, aug_vis_gt = self.random_crop(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
         
-        # aug_image, aug_gt = self.resize(image=image, gt=gt, size=(self.input_width, self.input_height))
-        # aug_image, aug_gt = self.rotate_image(image=aug_image, gt=aug_gt, angle=45)
-        # aug_image         = np.array(aug_image, dtype= np.float32) / 255.
-        # aug_gt            = np.array(aug_gt,    dtype= np.float32)
-        # aug_image, aug_gt = self.flip(image=aug_image, gt=aug_gt)
+        # aug_image = np.array(aug_image, dtype=np.float32) / 255.0
+        # aug_gt = np.array(aug_gt, dtype=np.float32)
+        # aug_vis_gt = np.array(aug_vis_gt)
 
-        aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
-        aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
-        # aug_image, aug_gt, aug_vis_gt = self.rotate_image(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt, angle=45)
-        aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
-        aug_image, aug_gt, aug_vis_gt = self.random_crop_torchvision(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        # if isinstance(aug_image, np.ndarray) and isinstance(aug_gt, np.ndarray) and isinstance(aug_vis_gt, np.ndarray):
+        #     tensor_image = torch.from_numpy(aug_image.transpose(2, 0, 1)).float()
+        #     tensor_image = (tensor_image - IMAGENET_MEAN) / IMAGENET_STD
+        #     tensor_gt = torch.from_numpy(aug_gt).long()
+        #     tensor_vis_gt = torch.from_numpy(aug_vis_gt)
 
-        aug_image = np.array(aug_image, dtype=np.float32) / 255.0
-        aug_gt = np.array(aug_gt, dtype=np.float32)
-        aug_vis_gt = np.array(aug_vis_gt)
-
-        if isinstance(aug_image, np.ndarray) and isinstance(aug_gt, np.ndarray) and isinstance(aug_vis_gt, np.ndarray):
-            tensor_image = torch.from_numpy(aug_image.transpose(2, 0, 1)).float()
-            tensor_image = (tensor_image - IMAGENET_MEAN) / IMAGENET_STD
-            tensor_gt = torch.from_numpy(aug_gt).long()
-            tensor_vis_gt = torch.from_numpy(aug_vis_gt)
-
-        sample = {'image': tensor_image, 'gt': tensor_gt, 'vis_gt': tensor_vis_gt}
+        # sample = {'image': tensor_image, 'gt': tensor_gt, 'vis_gt': tensor_vis_gt}
         
         # preprocessing_transforms = transforms.Compose([ToTensor()])
         # aug_image, aug_gt, aug_vis_gt = preprocessing_transforms(sample)
@@ -213,8 +222,14 @@ class CityScapesSeg_dataset(Dataset):
         image_np += shift
         image_np = np.clip(image_np, 0, 255)
         image = Image.fromarray(image_np.astype(np.uint8))
-        
+
         return image, gt, vis_gt
+
+    def random_brightness_jittering_changed(self, image, gt, vis_gt):
+        brightness = random.uniform(-10, 10)
+        brightness_image = TF.adjust_brightness(image, brightness_factor=1.0 + brightness/100.)
+        
+        return brightness_image, gt, vis_gt
 
     #DenseASPP aug
     #512, 512 image patches
@@ -259,14 +274,14 @@ class CityScapesSeg_dataset(Dataset):
         return crop_img, crop_gt, crop_vis_gt
 
 
-class ToTensor(object):
-    def __call__(self, sample):
-        image, gt = sample['image'], sample['gt']
-        image = np.array(image, dtype= np.float32)
-        gt    = np.array(gt,    dtype= np.int32)
+# class ToTensor(object):
+#     def __call__(self, sample):
+#         image, gt = sample['image'], sample['gt']
+#         image = np.array(image, dtype= np.float32)
+#         gt    = np.array(gt,    dtype= np.int32)
 
-        if isinstance(image, np.ndarray) and isinstance(gt, np.ndarray):
-            image = torch.from_numpy(image.transpose(2, 0, 1))
-            gt = torch.from_numpy(np.array(gt, dtype=np.int32)).long()
+#         if isinstance(image, np.ndarray) and isinstance(gt, np.ndarray):
+#             image = torch.from_numpy(image.transpose(2, 0, 1))
+#             gt = torch.from_numpy(np.array(gt, dtype=np.int32)).long()
 
-            return image, gt
+#             return image, gt
