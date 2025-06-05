@@ -89,41 +89,41 @@ class CityScapesSeg_dataset(Dataset):
             gt_mapped[array_gt == k] = v
         """----------------------------------------"""
         
-        # vis_gt = colorize.colorize_mask(gt_mapped)
-
-        self.transform = A.Compose([
-            # Albumentations RandomScale = “1 + scale_limit” 
-            # 배울 그대로 받고 싶으면 Affine이나 RandomResizedCrop 사용해야함
-            A.RandomScale(scale_limit=(-0.5, 1.0), p=1.0),
-            A.RandomCrop(height=512, width=512, p=1.0),
-            A.HorizontalFlip(p=0.5),
-            A.ColorJitter(brightness=0.1, p=1.0),
-            A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-            ToTensorV2()
-        ])
+        # self.transform = A.Compose([
+        #     A.HorizontalFlip(p=0.5),
+        #     # Albumentations RandomScale = “1 + scale_limit” 
+        #     # 배울 그대로 받고 싶으면 Affine이나 RandomResizedCrop 사용해야함
+        #     A.RandomScale(scale_limit=(-0.5, 1.0), p=1.0),
+        #     A.ColorJitter(brightness=0.1, p=1.0),
+        #     A.RandomCrop(height=512, width=512, p=1.0),
+        #     A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        #     ToTensorV2()
+        # ])
         
-        augmented = self.transform(image=np.array(open_image), mask=gt_mapped)
-        image_t = augmented['image']       # Tensor
-        gt_t = augmented['mask'].long()  # Tensor (segmentation label)
+        # augmented = self.transform(image=np.array(open_image), mask=gt_mapped)
+        # image_t = augmented['image']       # Tensor
+        # gt_t = augmented['mask'].long()  # Tensor (segmentation label)
 
-        sample = {'image': image_t, 'gt': gt_t}
+        # sample = {'image': image_t, 'gt': gt_t}
 
-        # aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
-        # aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
-        # aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
-        # aug_image, aug_gt, aug_vis_gt = self.random_crop(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        vis_gt = colorize.colorize_mask(gt_mapped)
+
+        aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_crop(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
         
-        # aug_image = np.array(aug_image, dtype=np.float32) / 255.0
-        # aug_gt = np.array(aug_gt, dtype=np.float32)
-        # aug_vis_gt = np.array(aug_vis_gt)
+        aug_image = np.array(aug_image, dtype=np.float32) / 255.0
+        aug_gt = np.array(aug_gt, dtype=np.float32)
+        aug_vis_gt = np.array(aug_vis_gt)
 
-        # if isinstance(aug_image, np.ndarray) and isinstance(aug_gt, np.ndarray) and isinstance(aug_vis_gt, np.ndarray):
-        #     tensor_image = torch.from_numpy(aug_image.transpose(2, 0, 1)).float()
-        #     tensor_image = (tensor_image - IMAGENET_MEAN) / IMAGENET_STD
-        #     tensor_gt = torch.from_numpy(aug_gt).long()
-        #     tensor_vis_gt = torch.from_numpy(aug_vis_gt)
+        if isinstance(aug_image, np.ndarray) and isinstance(aug_gt, np.ndarray) and isinstance(aug_vis_gt, np.ndarray):
+            tensor_image = torch.from_numpy(aug_image.transpose(2, 0, 1)).float()
+            tensor_image = (tensor_image - IMAGENET_MEAN) / IMAGENET_STD
+            tensor_gt = torch.from_numpy(aug_gt).long()
+            tensor_vis_gt = torch.from_numpy(aug_vis_gt)
 
-        # sample = {'image': tensor_image, 'gt': tensor_gt, 'vis_gt': tensor_vis_gt}
+        sample = {'image': tensor_image, 'gt': tensor_gt, 'vis_gt': tensor_vis_gt}
         
         # preprocessing_transforms = transforms.Compose([ToTensor()])
         # aug_image, aug_gt, aug_vis_gt = preprocessing_transforms(sample)

@@ -111,7 +111,7 @@ def test():
                         pin_memory=True,
                         persistent_workers=True)
 
-    model_dir = osp.join(arg_Dic.bestModel_dir, '0077_71.pth')
+    model_dir = osp.join(arg_Dic.bestModel_dir, '0078_69.pth')
     #model_dir을 파이썬 객체로 복원
     checkpoint = torch.load(model_dir, map_location='cpu')
 

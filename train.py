@@ -36,6 +36,8 @@ from Argument.Directory.Train_Directories import Train_Dics_args
 from schedule_learning_rate import schedule_learning_rate
 
 from cfg.DenseNet121 import Model_CFG as model_cfg
+from loss_function.Focal_loss import Focal_loss
+
 
 arg_Dic = Train_Dics_args()
 
@@ -86,14 +88,6 @@ def denorm(x):                       # x : (C,H,W) tensor on GPU/CPU
     mean = IMAGENET_MEAN.to(x.device)
     std  = IMAGENET_STD .to(x.device)
     return torch.clamp(x * std + mean, 0, 1)
-
-def Cross_Entropy_loss(gt, prediction):
-    
-    q = np.exp(gt)
-    q = q/np.expand_dims(np.sum(q, axis=1), axis=1)
-    c_squig = np.where([prediction])
-    Cross_Entropy_loss = -np.log(q[c_squig])
-    print(Cross_Entropy_loss)
 
 def set_seed(seed: int = 42):
     random.seed(seed)  # Python random seed
@@ -167,7 +161,7 @@ def main():
 
     # 최적화
     optimizer = torch.optim.Adam(model.parameters(), lr=arg_parameter.learning_rate, weight_decay=arg_parameter.weight_decay)
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=255).cuda()
+    # criterion = torch.nn.CrossEntropyLoss(ignore_index=255).cuda()
     
     n_class = 19
     mIoU_list = []
@@ -206,8 +200,8 @@ def main():
             output = model(sample_image) #  (B, 19, H, W) -> (B, H, W)
             # 0번째 인덱스: Road
             # 1번째 인덱스: Person
-            loss = criterion(output, sample_gt)
-            # loss = Cross_Entropy_loss(output, sample_gt)
+            # loss = criterion(output, sample_gt)
+            loss = Focal_loss(output, sample_gt, gamma= 2, alpha= 0.25)
             loss.backward()
             
             optimizer.step()
