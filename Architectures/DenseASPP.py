@@ -199,6 +199,20 @@ class _Transition(nn.Sequential):
             self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=stride))
 
 
-# if __name__ == "__main__":
-#     model = DenseASPP(2)
-#     print(model)
+if __name__ == "__main__":
+    Model_CFG = {
+    'bn_size': 4,
+    'drop_rate': 0,
+    'growth_rate': 32,
+    'num_init_features': 64,
+    'block_config': (6, 12, 24, 16),
+
+    'dropout0': 0.1,
+    'dropout1': 0.1,
+    'd_feature0': 128,
+    'd_feature1': 64,
+
+    'pretrained_path': "/home/seg_DenseASPP/pretrained/DenseNet121/DenseNet121_Modified/densenet121_clean_1024.pth"
+    }
+    model = DenseASPP(Model_CFG, n_class=19, output_stride=8)
+    print(model)

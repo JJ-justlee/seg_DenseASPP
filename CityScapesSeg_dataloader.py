@@ -17,7 +17,6 @@ import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3,1,1)
 IMAGENET_STD  = torch.tensor([0.229, 0.224, 0.225]).view(3,1,1)
 
@@ -108,10 +107,12 @@ class CityScapesSeg_dataset(Dataset):
 
         vis_gt = colorize.colorize_mask(gt_mapped)
 
-        aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=open_image, gt=gt_mapped, vis_gt=vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.resize(image=open_image, gt=gt_mapped, vis_gt=vis_gt, size=(1024, 1024))
         aug_image, aug_gt, aug_vis_gt = self.random_scaling(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
-        aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_flipping_horizontally(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
         aug_image, aug_gt, aug_vis_gt = self.random_crop(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+        aug_image, aug_gt, aug_vis_gt = self.random_brightness_jittering_changed(image=aug_image, gt=aug_gt, vis_gt=aug_vis_gt)
+ 
         
         aug_image = np.array(aug_image, dtype=np.float32) / 255.0
         aug_gt = np.array(aug_gt, dtype=np.float32)
@@ -136,15 +137,18 @@ class CityScapesSeg_dataset(Dataset):
     # Random Horizontal Flip
     # Random Crop: 512x512
 
-    def resize(self, image, gt, size):
+    def resize(self, image, gt, vis_gt, size):
         resized_image = image.resize(size, Image.BICUBIC) 
 
         if isinstance(gt, np.ndarray):
             gt = Image.fromarray(gt.astype(np.uint8))
+        if isinstance(vis_gt, np.ndarray):
+            vis_gt = Image.fromarray(vis_gt.astype(np.uint8))
 
         resized_gt = gt.resize(size,    Image.NEAREST)
+        resized_vis_gt = vis_gt.resize(size,    Image.BICUBIC)
 
-        return resized_image, resized_gt
+        return resized_image, resized_gt, resized_vis_gt
 
 
     def rotate_image(self, image, gt, vis_gt, angle):
@@ -226,6 +230,10 @@ class CityScapesSeg_dataset(Dataset):
         return image, gt, vis_gt
 
     def random_brightness_jittering_changed(self, image, gt, vis_gt):
+        
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(image)
+        
         brightness = random.uniform(-10, 10)
         brightness_image = TF.adjust_brightness(image, brightness_factor=1.0 + brightness/100.)
         
@@ -234,7 +242,7 @@ class CityScapesSeg_dataset(Dataset):
     #DenseASPP aug
     #512, 512 image patches
     def random_crop_torchvision(self, image, gt, vis_gt):
-        i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(512, 512))
+        i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(1024, 1024))
 
         if isinstance(gt, np.ndarray):
             gt = Image.fromarray(gt)

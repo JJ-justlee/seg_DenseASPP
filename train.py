@@ -114,11 +114,17 @@ def main():
     if not osp.exists(arg_Dic.log_dir):
         os.makedirs(arg_Dic.log_dir)
         
-    if not osp.exists(arg_Dic.higher_model_dir):
-        os.makedirs(arg_Dic.higher_model_dir)
+    if not osp.exists(arg_Dic.train_higher_model_dir):
+        os.makedirs(arg_Dic.train_higher_model_dir)
+
+    if not osp.exists(arg_Dic.val_higher_model_dir):
+        os.makedirs(arg_Dic.val_higher_model_dir)
         
-    if not osp.exists(arg_Dic.bestModel_dir):
-        os.makedirs(arg_Dic.bestModel_dir)
+    if not osp.exists(arg_Dic.train_bestModel_dir):
+        os.makedirs(arg_Dic.train_bestModel_dir)
+
+    if not osp.exists(arg_Dic.val_bestModel_dir):
+        os.makedirs(arg_Dic.val_bestModel_dir)
 
     # GPU 셋팅
     if torch.cuda.is_available():
@@ -161,10 +167,11 @@ def main():
 
     # 최적화
     optimizer = torch.optim.Adam(model.parameters(), lr=arg_parameter.learning_rate, weight_decay=arg_parameter.weight_decay)
-    # criterion = torch.nn.CrossEntropyLoss(ignore_index=255).cuda()
+    criterion = torch.nn.CrossEntropyLoss(ignore_index=255).cuda()
     
     n_class = 19
-    mIoU_list = []
+    train_mIoU_list = []
+    val_mIoU_list = []
 
     # 학습
     for epoch in range(arg_parameter.num_epochs): #100개의 epochs 모든 input date들이 모델에 학습이 되고 output으로 나오는 시각
@@ -176,44 +183,56 @@ def main():
         if epoch in [0, 10, 40, 79]:
             print(f"epoch {epoch:02d}  lr = {optimizer.param_groups[0]['lr']:.6f}")
 
+        total_loss = 0
+
+        train_inter_total = torch.zeros(n_class, dtype=torch.float64, device=device)
+        train_union_total = torch.zeros(n_class, dtype=torch.float64, device=device)
+
         #리스트, 튜플의 인덱스와 원소를 함께 출력하기 위해 enumerate()를 사용
         #unpacking을 통해 따로 출력 step, (sample_image, sample_gt) step와 (sample_image, sample_gt)을 따로 둠 > unpacking
         for step, batch_image in enumerate(train_dataloader):
             # print(f"Epoch: {epoch:>3}/{arg_parameter.num_epochs} | step: {step:>3}/{len(train_dataloader)} | lr: {optimizer.param_groups[0]['lr']:.6f}")
-            sample_image = batch_image['image']
-            sample_gt = batch_image['gt']
+            sample_image = batch_image['image'].to(device)
+            sample_gt = batch_image['gt'].to(device).squeeze(1).long()
             # sample_vis_gt = batch_image['vis_gt']
             
             # if step > 1: break
             
             optimizer.zero_grad()
-            
-            #device=device는 텐서가 CPU/GPU에 맞게 자동으로 할당됨
-            #(,,C)는 4개의 차원인데 이걸 rank가 4라고 표현을 함 > tensor
-            # sample_image = torch.tensor(sample_image, device=device, dtype=torch.float32)
-            # sample_gt = torch.tensor(sample_gt, device=device, dtype=torch.float32)
-            sample_image = sample_image.to(device)
-            sample_gt = sample_gt.to(device)
 
-            sample_gt = sample_gt.long()
-            sample_gt = sample_gt.squeeze(1)
-            output = model(sample_image) #  (B, 19, H, W) -> (B, H, W)
-            # 0번째 인덱스: Road
-            # 1번째 인덱스: Person
-            # loss = criterion(output, sample_gt)
-            loss = Focal_loss(output, sample_gt, gamma= 2, alpha= 0.25)
+            output_logit = model(sample_image) #  (B, 19, H, W) -> (B, H, W)
+
+            loss = criterion(output_logit, sample_gt)
+            # loss = Focal_loss(output, sample_gt, gamma= 2, alpha= 0.25)
+            
+            total_loss += loss.item()
+            
             loss.backward()
             
             optimizer.step()
+        
+            # train mIoU
+            with torch.no_grad():
+                predicted_class = torch.argmax(output_logit, dim=1)
+                train_valid_pixel = (sample_gt != 255)
             
-            output = torch.softmax(output, dim=1) #(8, 19, 256, 256)
-            predicted_class = torch.argmax(output, dim=1)  # 클래스 인덱스 추출 (B, H, W)
+                for cls in range(n_class):
+                    Intersection = ((predicted_class == cls) & (sample_gt == cls) & train_valid_pixel).sum()
+                    Union = (((predicted_class == cls) | (sample_gt == cls)) & train_valid_pixel).sum()
+                    
+                    train_inter_total[cls] += Intersection
+                    train_union_total[cls] += Union
 
-            # print(f'Epoch: {epoch:>3d}/{arg_parameter.num_epochs} | step: {step}/{len(train_dataloader)}, loss: {loss:.3f}')
+        epoch_ave_loss = total_loss / len(train_dataloader)
 
-        model.eval()
-        inter_total = torch.zeros(n_class, dtype=torch.float64, device=device)   # 교집합 합계
-        union_total = torch.zeros(n_class, dtype=torch.float64, device=device)   # 합집합 합계
+        train_iou_per_class = train_inter_total / torch.clamp(train_union_total, min=1)    # 0으로 나눔 방지
+        train_valid_cls     = train_union_total > 0                                  # 데이터셋에 존재하는 클래스
+        train_mIoU          = train_iou_per_class[train_valid_cls].mean().item() * 100
+        train_mIoU_list.append(train_mIoU)
+                
+        # val mIoU
+        val_inter_total = torch.zeros(n_class, dtype=torch.float64, device=device)   # 교집합 합계
+        val_union_total = torch.zeros(n_class, dtype=torch.float64, device=device)   # 합집합 합계            
 
         with torch.no_grad():
             for batch in val_dataloader:
@@ -226,30 +245,39 @@ def main():
                 valid_pixel  = (sample_val_gt != 255)
                 
                 for cls in range(n_class):
-                    pred_c = (val_predicted_class == cls) & valid_pixel
-                    gt_c   = (sample_val_gt == cls) & valid_pixel
+                    val_pred_c = (val_predicted_class == cls) & valid_pixel
+                    val_gt_c   = (sample_val_gt == cls) & valid_pixel
 
-                    inter_total[cls] += (pred_c & gt_c).sum()
-                    union_total[cls] += (pred_c | gt_c).sum()
+                    val_inter_total[cls] += (val_pred_c & val_gt_c).sum()
+                    val_union_total[cls] += (val_pred_c | val_gt_c).sum()
 
-        iou_per_class = inter_total / torch.clamp(union_total, min=1)    # 0으로 나눔 방지
-        valid_cls     = union_total > 0                                  # 데이터셋에 존재하는 클래스
-        mIoU          = iou_per_class[valid_cls].mean().item() * 100
-        mIoU_list.append(mIoU)
+        val_iou_per_class = val_inter_total / torch.clamp(val_union_total, min=1)    # 0으로 나눔 방지
+        val_valid_cls     = val_union_total > 0                                  # 데이터셋에 존재하는 클래스
+        val_mIoU          = val_iou_per_class[val_valid_cls].mean().item() * 100
+        val_mIoU_list.append(val_mIoU)
 
         #한 epoch이 끝나고 나면 시간 출력 
         t_elapsed = timedelta(seconds=time.time() - start)
         training_time_left = ((arg_parameter.num_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600)
-        print(f"Name: {arg_Dic.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{arg_parameter.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {loss:.4f} | mIoU: {mIoU:.2f}")
-        torch.save(model.state_dict(), osp.join(arg_Dic.model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
+        
+        print(f"Name: {arg_Dic.model_name} | Epoch: {'[':>4}{epoch + 1:>4}/{arg_parameter.num_epochs}] | time left: {training_time_left:.2f} hours | loss: {epoch_ave_loss:.4f} | Val_mIoU: {val_mIoU:.2f} | Train_mIoU: {train_mIoU:.2f}")
+        torch.save(model.state_dict(), osp.join(arg_Dic.model_dir, f"{epoch + 1:04d}_valmIoU_{int(val_mIoU):d}_trainmIoU_{int(train_mIoU):d}.pth"))
 
-        if len(mIoU_list) >= 2:
-            if mIoU_list[-1] > max(mIoU_list[:-1]):
-                betterIoU = mIoU_list[-1]
-                better_IoU = mIoU_list.index(betterIoU)
-                torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{better_IoU + 1:04d}_{int(betterIoU):d}.pth"))
+        if len(train_mIoU_list) >= 2:
+            if train_mIoU_list[-1] > max(train_mIoU_list[:-1]):
+                train_better_mIoU = train_mIoU_list[-1]
+                train_better_mIoU_num = train_mIoU_list.index(train_better_mIoU)
+                torch.save(model.state_dict(), osp.join(arg_Dic.train_higher_model_dir, f"{train_better_mIoU_num + 1:04d}_{int(train_better_mIoU):d}.pth"))
         else:
-            torch.save(model.state_dict(), osp.join(arg_Dic.higher_model_dir, f"{epoch + 1:04d}_{int(mIoU):d}.pth"))
+            torch.save(model.state_dict(), osp.join(arg_Dic.train_higher_model_dir, f"{epoch + 1:04d}_{int(train_mIoU):d}.pth"))
+
+        if len(val_mIoU_list) >= 2:
+            if val_mIoU_list[-1] > max(val_mIoU_list[:-1]):
+                val_better_mIoU = val_mIoU_list[-1]
+                val_better_mIoU_num = val_mIoU_list.index(val_better_mIoU)
+                torch.save(model.state_dict(), osp.join(arg_Dic.val_higher_model_dir, f"{val_better_mIoU_num + 1:04d}_{int(val_better_mIoU):d}.pth"))
+        else:
+            torch.save(model.state_dict(), osp.join(arg_Dic.val_higher_model_dir, f"{epoch + 1:04d}_{int(val_mIoU):d}.pth"))
 
         #일 단위
         # training_time_left = ((total_epochs - (epoch + 1)) * t_elapsed.total_seconds()) / (3600*24)
@@ -263,7 +291,7 @@ def main():
         # print(sample_image.shape) > (C, H, W)
         
         writer.add_image('Input/train_dataset_Image', denorm(sample_image[idx_random_train]), global_step=epoch)
-        
+
         # sample_vis_gt = sample_vis_gt.permute(0, 3, 1, 2) #(B, H, W, C) > (B, C, H, W)
         # writer.add_image('Input/train_dataset_Gt', sample_vis_gt[idx_random_train], global_step=epoch)
         sample_gt = sample_gt[idx_random_train]
@@ -294,18 +322,24 @@ def main():
         val_predicted_class = torch.tensor(val_predicted_class, dtype=torch.uint8).permute(2, 0, 1)  # (3, H, W)
         writer.add_image('Results/val_predic_result', val_predicted_class, global_step=epoch)
 
-        writer.add_scalar('Evaluation/Loss', loss, global_step=epoch)
-        writer.add_scalar('Evaluation/Accuracy', mIoU, global_step=epoch)
+        writer.add_scalar('Evaluation/Loss', epoch_ave_loss, global_step=epoch)
+        writer.add_scalar('Evaluation/train_Accuracy', train_mIoU, global_step=epoch)
+        writer.add_scalar('Evaluation/val_Accuracy', val_mIoU, global_step=epoch)
         writer.add_scalar('Evaluation/learning rate', optimizer.param_groups[0]['lr'], global_step=epoch)
     
-    return model, mIoU_list
+    return model, train_mIoU_list, val_mIoU_list
 
-def save_best_model(model, mIoU_list):
-    if len(mIoU_list) >= 2:
-        maxIoU = max(mIoU_list)
-        max_IoU = mIoU_list.index(maxIoU)
-        torch.save(model.state_dict(), osp.join(arg_Dic.bestModel_dir, f"{max_IoU + 1:04d}_{int(maxIoU):d}.pth"))
+def save_best_model(model, train_mIoU_list, val_mIoU_list):
+    if len(train_mIoU_list) >= 2:
+        train_max_mIoU = max(train_mIoU_list)
+        train_max_mIoU_num = train_mIoU_list.index(train_max_mIoU)
+        torch.save(model.state_dict(), osp.join(arg_Dic.train_bestModel_dir, f"{train_max_mIoU_num + 1:04d}_{int(train_max_mIoU):d}.pth"))
+
+    if len(val_mIoU_list) >= 2:
+        val_max_mIoU = max(val_mIoU_list)
+        val_max_mIoU_num = val_mIoU_list.index(val_max_mIoU)
+        torch.save(model.state_dict(), osp.join(arg_Dic.val_bestModel_dir, f"{val_max_mIoU_num + 1:04d}_{int(val_max_mIoU):d}.pth"))
 
 if __name__ == "__main__":   
-    model, mIoU_list = main()
-    save_best_model(model, mIoU_list)
+    model, train_mIoU_list, val_mIoU_list = main()
+    save_best_model(model, train_mIoU_list, val_mIoU_list)

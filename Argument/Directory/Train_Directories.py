@@ -15,16 +15,20 @@ def Train_Dics_args():
 
     parser.add_argument('--exp_dir', type=str, help='result save directory',
                         default=osp.join(base_dir, 'experiments'))
-    parser.add_argument('--model_name', type=str,   help='Customized DenseASPP', default='DenseASPP_focal_loss')    
+    parser.add_argument('--model_name', type=str,   help='Customized DenseASPP', default='DenseASPP_changed_brightness_aug_seq_add_resize')    
 
     args = parser.parse_args()
 
     parser.add_argument('--model_dir', type=str, help='model directory for saving',
                         default=osp.join(args.exp_dir, args.model_name, 'models'))
-    parser.add_argument('--higher_model_dir', type=str, help='model directory for saving',
-                        default=osp.join(args.exp_dir, args.model_name, 'higherModel'))
-    parser.add_argument('--bestModel_dir', type=str, help='model directory for saving',
-                        default=osp.join(args.exp_dir, args.model_name, 'bestModel'))
+    parser.add_argument('--train_higher_model_dir', type=str, help='model directory for saving',
+                        default=osp.join(args.exp_dir, args.model_name, 'train_higherModel'))
+    parser.add_argument('--train_bestModel_dir', type=str, help='model directory for saving',
+                        default=osp.join(args.exp_dir, args.model_name, 'train_bestModel'))
+    parser.add_argument('--val_higher_model_dir', type=str, help='model directory for saving',
+                        default=osp.join(args.exp_dir, args.model_name, 'val_higherModel'))
+    parser.add_argument('--val_bestModel_dir', type=str, help='model directory for saving',
+                        default=osp.join(args.exp_dir, args.model_name, 'val_bestModel'))
     parser.add_argument('--log_dir', type=str, help='log directory for tensorboard',
                         default=osp.join(args.exp_dir, args.model_name, 'log'))
     
